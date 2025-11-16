@@ -5,7 +5,6 @@
 #include "ICTCSmoother.H"
 #include "PrecisionAdaptor.H"
 #include <algorithm>
-#include <cmath>
 
 #define MAKE_PARAMATERIZED_ICTC_SMOOTHER(ClassName, dropTol)                   \
 namespace Foam                                                                 \
@@ -42,13 +41,13 @@ Foam::ClassName::ClassName                                                     \
 // Instantiates ICTCSmoother Variants
 
 MAKE_PARAMATERIZED_ICTC_SMOOTHER(ICTC_m4,    1e-4);
-MAKE_PARAMATERIZED_ICTC_SMOOTHER(ICTC_m3p5,  std::pow(10.0, -3.5));
+MAKE_PARAMATERIZED_ICTC_SMOOTHER(ICTC_m3p5,  pow(10.0, -3.5));
 MAKE_PARAMATERIZED_ICTC_SMOOTHER(ICTC_m3,    1e-3);
-MAKE_PARAMATERIZED_ICTC_SMOOTHER(ICTC_m2p5,  std::pow(10.0, -2.5));
+MAKE_PARAMATERIZED_ICTC_SMOOTHER(ICTC_m2p5,  pow(10.0, -2.5));
 MAKE_PARAMATERIZED_ICTC_SMOOTHER(ICTC_m2,    1e-2);
-MAKE_PARAMATERIZED_ICTC_SMOOTHER(ICTC_m1p5,  std::pow(10.0, -1.5));
+MAKE_PARAMATERIZED_ICTC_SMOOTHER(ICTC_m1p5,  pow(10.0, -1.5));
 MAKE_PARAMATERIZED_ICTC_SMOOTHER(ICTC_m1,    1e-1);
-MAKE_PARAMATERIZED_ICTC_SMOOTHER(ICTC_m0p5,  std::pow(10.0, -0.5));
+MAKE_PARAMATERIZED_ICTC_SMOOTHER(ICTC_m0p5,  pow(10.0, -0.5));
 
 // Default Smoother Instantiation
 MAKE_PARAMATERIZED_ICTC_SMOOTHER(ICTC,  1);
