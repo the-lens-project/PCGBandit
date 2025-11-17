@@ -23,7 +23,7 @@ class ICTCSmootherBase
      // Private data
   
         //- The reciprocal preconditioned diagonal
-	solveScalarField diagL_;
+		solveScalarField diagL_;
         solveScalarField lowerL_;
         labelField rowAddrL_;
         labelField colPtrL_;
@@ -32,35 +32,35 @@ public:
   
      // Constructors
   
-         //- Construct from matrix components
-         ICTCSmootherBase
-         (
-		const word& fieldName,
-		const lduMatrix& matrix,
-		const FieldField<Field, scalar>& interfaceBouCoeffs,
-		const FieldField<Field, scalar>& interfaceIntCoeffs,
-		const lduInterfaceFieldPtrsList& interfaces,
-		const scalar droptol
-         );
+        //- Construct from matrix components
+        ICTCSmootherBase
+        (
+			const word& fieldName,
+			const lduMatrix& matrix,
+			const FieldField<Field, scalar>& interfaceBouCoeffs,
+			const FieldField<Field, scalar>& interfaceIntCoeffs,
+			const lduInterfaceFieldPtrsList& interfaces,
+			const scalar droptol
+        );
 
     // Member Functions
   
         //- Smooth the solution for a given number of sweeps
-	void smooth
+		void smooth
         (
-		solveScalarField& psi,
-		const scalarField& source,
-		const direction cmpt,
-		const label nSweeps
+			solveScalarField& psi,
+			const scalarField& source,
+			const direction cmpt,
+			const label nSweeps
         ) const;
 
-	void scalarSmooth 
-	(
-		solveScalarField& psi,
-		const solveScalarField& source,
-		const direction cmpt,
-		const label nSweeps
-        ) const;
+		void scalarSmooth 
+		(
+			solveScalarField& psi,
+			const solveScalarField& source,
+			const direction cmpt,
+			const label nSweeps
+    	) const;
 
 };
   
