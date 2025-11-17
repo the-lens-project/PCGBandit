@@ -1,4 +1,4 @@
 ICTCPreconditioner/ICTCPreconditioner.C
 ICTCSmoother/ICTCSmootherBase.C
 ICTCSmoother/ICTCSmoother.C
-	LIB = $(FOAM_USER_LIBBIN)/libICTC
+LIB = $(FOAM_USER_LIBBIN)/libICTC

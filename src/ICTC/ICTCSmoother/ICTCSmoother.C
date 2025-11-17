@@ -23,7 +23,7 @@ Foam::ClassName::ClassName                                                     \
     const FieldField<Field, scalar>& interfaceBouCoeffs,                       \
     const FieldField<Field, scalar>& interfaceIntCoeffs,                       \
     const lduInterfaceFieldPtrsList& interfaces,                               \
-    const dictionary& dict                                                     \
+    const dictionary& 	                                                       \
 )                                                                              \
 :                                                                              \
     ICTCSmootherBase                                                           \
@@ -33,7 +33,7 @@ Foam::ClassName::ClassName                                                     \
         interfaceBouCoeffs,                                                    \
         interfaceIntCoeffs,                                                    \
         interfaces,                                                            \
-        (dropTol)                                                              \
+        dropTol                                                                \
     )                                                                          \
 {}                                                                             \
 

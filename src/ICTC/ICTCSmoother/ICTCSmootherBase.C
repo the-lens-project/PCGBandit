@@ -22,7 +22,7 @@ Foam::ICTCSmootherBase::ICTCSmootherBase
 :
     lduMatrix::smoother
     (
-     	fieldName, 
+	fieldName, 
 	matrix, 
 	interfaceBouCoeffs, 
 	interfaceIntCoeffs, 
