@@ -22,11 +22,11 @@ Foam::ICTCSmootherBase::ICTCSmootherBase
 :
     lduMatrix::smoother
     (
-	fieldName, 
-	matrix, 
-	interfaceBouCoeffs, 
-	interfaceIntCoeffs, 
-	interfaces
+		fieldName, 
+		matrix, 
+		interfaceBouCoeffs, 
+		interfaceIntCoeffs, 
+		interfaces
     ),
     
     diagL_(matrix_.diag().size()),
@@ -63,7 +63,7 @@ void Foam::ICTCSmootherBase::smooth
 
     for (label sweeps = 0; sweeps < nSweeps; sweeps++) {
 
-	matrix_.residual
+		 matrix_.residual
          (
              rA,
              psi,
