@@ -1,2 +1,4 @@
-ICTCPreconditioner.C
-LIB = $(FOAM_USER_LIBBIN)/libICTCPreconditioner
+ICTCPreconditioner/ICTCPreconditioner.C
+ICTCSmoother/ICTCSmootherBase.C
+ICTCSmoother/ICTCSmoother.C
+LIB = $(FOAM_USER_LIBBIN)/libICTC
