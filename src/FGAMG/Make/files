@@ -1,0 +1,7 @@
+FGAMG/FGAMGSolver.C
+FGAMG/FGAMGSolverSolve.C
+FGAMG/FGAMGSolverAgglomerateMatrix.C
+FGAMG/FGAMGSolverInterpolate.C
+FGAMG/FGAMGSolverScale.C
+FGAMGPreconditioner/FGAMGPreconditioner.C
+LIB = $(FOAM_USER_LIBBIN)/libFGAMG

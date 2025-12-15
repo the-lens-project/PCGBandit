@@ -33,8 +33,6 @@ Foam::ICTCSmootherBase::ICTCSmootherBase
     lowerL_(200 * matrix_.diag().size()),
     rowAddrL_(200 * matrix_.diag().size()),
     colPtrL_(matrix_.diag().size() + 1)
-    
-
 {
     const scalar pivmin = 1e-16;
     ICTCPreconditioner::calcL(diagL_, lowerL_, rowAddrL_, colPtrL_, matrix_, droptol, pivmin);
@@ -60,6 +58,8 @@ void Foam::ICTCSmootherBase::smooth
     solveScalar* __restrict__ rAPtr = rA.begin();
 
     const label n = rA.size();
+
+    bool posdef = (diagL[0] > 0.0);
 
     for (label sweeps = 0; sweeps < nSweeps; sweeps++) {
 
@@ -93,7 +93,13 @@ void Foam::ICTCSmootherBase::smooth
             rAPtr[i] = s * diagL[i];
     	}
 
-	psi -= rA; 
+	if (posdef) {
+		psi += rA; 
+	}
+	else {
+		psi -= rA;
+	}
+
 
     }
 

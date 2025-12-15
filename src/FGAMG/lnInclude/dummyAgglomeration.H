@@ -1,0 +1,1 @@
+../FGAMG/GAMGAgglomerations/dummyAgglomeration/dummyAgglomeration.H
