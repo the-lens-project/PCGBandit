@@ -1,1 +1,0 @@
-../FGAMG/interfaces/GAMGInterface/GAMGInterfaceTemplates.C

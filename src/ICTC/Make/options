@@ -1,6 +1,2 @@
-EXE_INC = \
-  -I$(LIB_SRC)/lduSolvers/lnInclude \
-  -I$(LIB_SRC)/finiteVolume/lnInclude 
-EXE_LIBS = \
-  -llduSolvers \
-  -lfiniteVolume
+EXE_INC = 
+EXE_LIBS = 

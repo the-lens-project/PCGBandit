@@ -1,1 +1,0 @@
-../FGAMG/interfaceFields/cyclicGAMGInterfaceField/cyclicGAMGInterfaceField.C
