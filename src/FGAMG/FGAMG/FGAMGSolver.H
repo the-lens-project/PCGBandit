@@ -234,14 +234,11 @@ class FGAMGSolver
 	(
     	    const label level,
     	    const label maxLevels,
-	    List<word> availableSmoothers,
-	    dictionary& controlDict_
-	) const;
-
-	List<word> findSmootherRange 
-	(
+	    const List<word>& availableSmoothers,
 	    dictionary& controlDict
 	) const;
+
+	List<word> findSmootherRange() const;
 
         //- Perform a single GAMG V-cycle with pre, post and finest smoothing.
         void Vcycle

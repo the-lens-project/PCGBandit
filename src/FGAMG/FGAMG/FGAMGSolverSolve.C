@@ -453,11 +453,11 @@ void Foam::FGAMGSolver::initVcycle
     coarseSources.setSize(matrixLevels_.size());
     smoothers.setSize(matrixLevels_.size() + 1);
 
+    // Finds range of parameterized smoothers specified in the solver
+    List<word> smootherRange = findSmootherRange();
+
     // Creates copy of the solver (original copy can't be modified directly)
     dictionary modifiedControlDict(controlDict_);
-
-    // Finds range of parameterized smoothers specified in the solver
-    List<word> smootherRange = findSmootherRange(modifiedControlDict);
 
     // Selects initial smoother for the finest level
     if (smootherRange.size() > 0) {
@@ -526,10 +526,8 @@ void Foam::FGAMGSolver::initVcycle
     }
 }
 
-Foam::List<Foam::word> Foam::FGAMGSolver::findSmootherRange
-(
-    dictionary& controlDict_
-) const
+Foam::List<Foam::word> Foam::FGAMGSolver::findSmootherRange()
+const
 {
     
     // Retrieves finest & coarsest level drop tolerances if specified in solution file; otherwise defaults to n/A
@@ -547,7 +545,7 @@ Foam::List<Foam::word> Foam::FGAMGSolver::findSmootherRange
 	// Throws error if improper drop tolerance bounds were specified
 	if (startingIndex == -1 || endingIndex == -1) {
         	FatalErrorInFunction << "Improper drop tolerance specified in solution file. \n"
-		<< "Please retry with selections from (ICTC_m0p5, ICTC_m1, ICTC_m1p5, ICTC_m2, ICTC_m2p5, ICTC_m3, ICTC_m3p5, ICTC_m4)" 
+		<< "Please retry with selections from " << smootherList  
 		<< " for both finest and coarsest levels." << exit(FatalError);
 	} 
 	// Flips bounds if specified in unexpected order
@@ -575,17 +573,16 @@ void Foam::FGAMGSolver::selectSmootherPerLevel
 (
     const label level,
     const label maxLevels,
-    List<word> availableSmoothers,
-    dictionary& controlDict_
+    const List<word>& availableSmoothers,
+    dictionary& controlDict
 ) const
 {
 	// Calculate which smoother to select from list
 	scalar levelRatio = scalar(level) / scalar(maxLevels);
 	label index = floor(levelRatio*scalar(availableSmoothers.size()-1));
-	//Info << "Smoother parameterization selected: " << availableSmoothers[index] << " " << endl;
 
 	// Select smoother
-	controlDict_.set("smoother", availableSmoothers[index]);
+	controlDict.set("smoother", availableSmoothers[index]);
 }
 
 
