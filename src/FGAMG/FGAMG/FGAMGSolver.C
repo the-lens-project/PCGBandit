@@ -74,7 +74,15 @@ Foam::FGAMGSolver::FGAMGSolver
         "ICTC_m2p5",
         "ICTC_m3",
         "ICTC_m3p5",
-        "ICTC_m4"
+        "ICTC_m4",
+	"ICTCGaussSeidel_m0p5",
+	"ICTCGaussSeidel_m1",
+	"ICTCGaussSeidel_m1p5",
+	"ICTCGaussSeidel_m2",
+	"ICTCGaussSeidel_m2p5",
+	"ICTCGaussSeidel_m3",
+	"ICTCGaussSeidel_m3p5",
+	"ICTCGaussSeidel_m4"
     })
 {
     readControls();

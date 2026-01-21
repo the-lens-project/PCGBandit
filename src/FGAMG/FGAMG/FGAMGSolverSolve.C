@@ -542,12 +542,23 @@ const
 	label endingIndex = smootherList.find(coarsestSmoother);
 	bool reversedBounds = false;
 
+
 	// Throws error if improper drop tolerance bounds were specified
 	if (startingIndex == -1 || endingIndex == -1) {
         	FatalErrorInFunction << "Improper drop tolerance specified in solution file. \n"
 		<< "Please retry with selections from " << smootherList  
 		<< " for both finest and coarsest levels." << exit(FatalError);
-	} 
+	}
+
+	// Stores values to check if coarsest and finest smoother specified belong to the same smoother family
+	bool startContainsGaussSeidel = smootherList[startingIndex].find("GaussSeidel") != word::npos;
+	bool endContainsGaussSeidel = smootherList[endingIndex].find("GaussSeidel") != word::npos;
+
+	if (startContainsGaussSeidel != endContainsGaussSeidel) {
+        	FatalErrorInFunction << "Smoother mismatch specified in solution file. \n"
+		<< "Please retry with selections from " << smootherList  
+		<< " that belong to the family." << exit(FatalError);
+	}
 	// Flips bounds if specified in unexpected order
 	else if (startingIndex > endingIndex) {
 		Swap(startingIndex, endingIndex);
