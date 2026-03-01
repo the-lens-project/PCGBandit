@@ -716,13 +716,15 @@ Foam::solverPerformance Foam::PCGBandit::solve
 (
     scalarField& psi_s,
     const scalarField& source,
-    const direction cmpt) const
+    const direction cmpt
+) const
 {
     PrecisionAdaptor<solveScalar, scalar> tpsi(psi_s);
     return scalarSolve(
         tpsi.ref(),
         ConstPrecisionAdaptor<solveScalar, scalar>(source)(),
-        cmpt);
+        cmpt
+    );
 }
 
 // ************************************************************************* //
