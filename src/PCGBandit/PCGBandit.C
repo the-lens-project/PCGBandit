@@ -219,7 +219,7 @@ void Foam::PCGBandit::queryLearner
     label i = static_;
     dictionary& learningDict = learningDicts.subDictOrAdd(banditName_);
     dictionary& GAMGOptions = learningDict.subDict("GAMGOptions");
-    
+
     if (i == -1) {
 
         if (Pstream::myProcNo() == 0) {
@@ -533,7 +533,7 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
                 // --- Default backstop iteration computed via a cost estimate ratio
                 if (backstop_ == -1) {
                     backstopIter = label(scalar(maxIter)
-                                         * perIterationCostEstimate("DIC") 
+                                         * perIterationCostEstimate("DIC")
                                          / perIterationCostEstimate(subDict.get<word>("preconditioner")));
                     maxIter = backstopIter;
                 }
@@ -556,7 +556,7 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
 
                 if (solverPerf.nIterations() == 0 || solverPerf.nIterations() == backstopIter)
                 {
-                    for (label cell=0; cell<nCells; cell++) 
+                    for (label cell=0; cell<nCells; cell++)
                     {
                         pAPtr[cell] = wAPtr[cell];
                     }
@@ -565,9 +565,9 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
                 {
                     solveScalar beta = wArA/wArAold;
 
-                    for (label cell=0; cell<nCells; cell++) 
+                    for (label cell=0; cell<nCells; cell++)
                     {
-                        pAPtr[cell] = wAPtr[cell] + beta * pAPtr[cell];
+                        pAPtr[cell] = wAPtr[cell] + beta*pAPtr[cell];
                     }
                 }
 
@@ -590,7 +590,7 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
                 }
 
                 solverPerf.finalResidual() =
-                    gSumMag(rA, matrix().mesh().comm()) 
+                    gSumMag(rA, matrix().mesh().comm())
                    /normFactor;
 
             } while
