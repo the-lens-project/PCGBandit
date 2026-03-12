@@ -156,7 +156,6 @@ Foam::PCGBandit::PCGBandit
         dGAMG_ = label(Switch(solverControls.getOrDefault<word>("GAMGTune", "no")));
 
         // labelGAMG
-        List<List<label>> labelGAMGlist(labelGAMGParams.size());
         for (label j = 0; j < labelGAMGParams.size(); ++j) {
             const word optKey = labelGAMGParams[j] + "Options";
             List<label> vals;
@@ -164,7 +163,6 @@ Foam::PCGBandit::PCGBandit
             {
                 vals = solverControls.getOrDefault<List<label>>(optKey, List<label>());
             }
-            labelGAMGlist[j] = vals;
             labelGAMGSizes[j] = GAMGOptions.get<List<label>>(labelGAMGParams[j]).size();
             if (Switch(solverControls.getOrDefault<word>(labelGAMGParams[j] + "Tune", "no")))
             {
@@ -174,7 +172,6 @@ Foam::PCGBandit::PCGBandit
         }
 
         // wordGAMG
-        List<List<word>> wordGAMGlist(wordGAMGParams.size());
         for (label j = 0; j < wordGAMGParams.size(); ++j) {
             const word optKey = wordGAMGParams[j] + "Options";
             List<word> vals;
@@ -182,7 +179,6 @@ Foam::PCGBandit::PCGBandit
             {
                 vals = solverControls.getOrDefault<List<word>>(optKey, List<word>());
             }
-            wordGAMGlist[j] = vals;
             wordGAMGSizes[j] = GAMGOptions.get<List<word>>(wordGAMGParams[j]).size();
             if (Switch(solverControls.getOrDefault<word>(wordGAMGParams[j] + "Tune", "no")))
             {
@@ -191,8 +187,6 @@ Foam::PCGBandit::PCGBandit
             }
         }
 
-        learningDict.set("labelGAMG", labelGAMGlist);
-        learningDict.set("wordGAMG", wordGAMGlist);
         learningDict.set("dGAMG", dGAMG_);
     } else {
         // *** Load the previously computed dimension back in ***
