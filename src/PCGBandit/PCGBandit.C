@@ -89,16 +89,14 @@ Foam::PCGBandit::PCGBandit
     // --- Contextual information specification
     word preconditioner = solverControls.get<word>("preconditioner");
     const fvMesh& mesh = dynamicCast<const fvMesh>(matrix.mesh());
-    if (preconditioner == "separate")
-    {
+    if (preconditioner == "separate") {
         banditName_ = mesh.name() + "." + fieldName;
     } else if (preconditioner == "joint") {
         banditName_ = "joint";
     } else {
         banditName_ = preconditioner;
     }
-    if (relTol_ == 0.0 and Switch(solverControls.getOrDefault<word>("residualContext", "no")))
-    {
+    if (relTol_ == 0.0 and Switch(solverControls.getOrDefault<word>("residualContext", "no"))) {
         banditName_ += "Final";
     }
 
@@ -111,64 +109,50 @@ Foam::PCGBandit::PCGBandit
     randomUniform_ = Switch(solverControls.getOrDefault<word>("randomUniform", "no"));
     banditAlgorithm_ = solverControls.getOrDefault<word>("banditAlgorithm", "TsallisINF");
 
-    // --- Configuration space initialization
+    if (!learningDicts.found(banditName_)) {
+        // --- Configuration space initialization
+        dictionary& learningDict = learningDicts.subDictOrAdd(banditName_);
 
-    const bool createFirst = !learningDicts.found(banditName_);
-    dictionary& learningDict = learningDicts.subDictOrAdd(banditName_);
+        if (Pstream::myProcNo() == 0 && createFirst)
+        {
+            rndGen.reset(seed_);
+        }
 
-    if (Pstream::myProcNo() == 0 && createFirst)
-    {
-        rndGen.reset(seed_);
-    }
-
-    // --- ICTC specification
-    maxLogDroptol_ = solverControls.getOrDefault<scalar>("maxLogDroptol", -0.5);
-    minLogDroptol_ = solverControls.getOrDefault<scalar>("minLogDroptol", -4.0);
-    numDroptols_ = solverControls.getOrDefault<label>("numDroptols", 0);
+        // --- ICTC specification
+        maxLogDroptol_ = solverControls.getOrDefault<scalar>("maxLogDroptol", -0.5);
+        minLogDroptol_ = solverControls.getOrDefault<scalar>("minLogDroptol", -4.0);
+        numDroptols_ = solverControls.getOrDefault<label>("numDroptols", 0);
 
     
-    void addLabelListOrDefault = [&](const word& fvName, const word& keyName, const List<label>& defList)
-    {
-    List<label> vals = solverControls.getOrDefault<List<label>>(fvName, defList);
-        if (vals.empty())
-            vals = defList;
-        GAMGOptions.set(keyName, vals);
-    };
-
-    addLabelListOrDefault("nPreSweepsOptions", "nPreSweeps", {0, 2});
-    addLabelListOrDefault("nPostSweepsOptions", "nPostSweeps", {1, 2});
-    addLabelListOrDefault("nFinestSweepsOptions", "nFinestSweeps", {2});
-    addLabelListOrDefault("nCellsInCoarsestLevelOptions", "nCellsInCoarsestLevel", {10, 100, 1000});
-    addLabelListOrDefault("mergeLevelsOptions", "mergeLevels", {1, 2});
-    addLabelListOrDefault("nVcyclesOptions", "nVcycles", {1, 2});
-
-    // Word Parameters (string options)
-
-    void addWordListOrDefault = [&](const word& fvName, const word& keyName, const List<word>& defList)
-    {
-        List<word> vals = solverControls.getOrDefault<List<word>>(fvName, defList);
-        if (vals.empty())
-            vals = defList;
-        GAMGOptions.set(keyName, vals);
-    };
-
-    addWordListOrDefault("smootherOptions", "smoother", {"GaussSeidel", "DIC", "DICGaussSeidel", "symGaussSeidel"});
-    addWordListOrDefault("agglomeratorOptions", "agglomerator", {"faceAreaPair", "algebraicPair"});
-    addWordListOrDefault("directSolveCoarsestOptions", "directSolveCoarsest", {"no", "yes"});
-
-
-    {
-
-        // --- No cache agglomeration if GAMG is tuned
-        cacheAgglomeration_ = (static_ > -1 || !(wordGAMGTune[1] || labelGAMGTune[0] || labelGAMGTune[1]));
-        if (cacheAgglomeration_)
+        void addLabelListOrDefault = [&](const word& fvName, const word& keyName, const List<label>& defList)
         {
-            cacheAgglomeration_ = Switch(solverControls.getOrDefault<word>("cacheAgglomeration", "yes"));
-        }
-    }
+        List<label> vals = solverControls.getOrDefault<List<label>>(fvName, defList);
+            if (vals.empty())
+                vals = defList;
+            GAMGOptions.set(keyName, vals);
+        };
 
-    if (createFirst)
-    {
+        addLabelListOrDefault("nPreSweepsOptions", "nPreSweeps", {0, 2});
+        addLabelListOrDefault("nPostSweepsOptions", "nPostSweeps", {1, 2});
+        addLabelListOrDefault("nFinestSweepsOptions", "nFinestSweeps", {2});
+        addLabelListOrDefault("nCellsInCoarsestLevelOptions", "nCellsInCoarsestLevel", {10, 100, 1000});
+        addLabelListOrDefault("mergeLevelsOptions", "mergeLevels", {1, 2});
+        addLabelListOrDefault("nVcyclesOptions", "nVcycles", {1, 2});
+
+        // Word Parameters (string options)
+
+        void addWordListOrDefault = [&](const word& fvName, const word& keyName, const List<word>& defList)
+        {
+            List<word> vals = solverControls.getOrDefault<List<word>>(fvName, defList);
+            if (vals.empty())
+               vals = defList;
+            GAMGOptions.set(keyName, vals);
+        };
+
+        addWordListOrDefault("smootherOptions", "smoother", {"GaussSeidel", "DIC", "DICGaussSeidel", "symGaussSeidel"});
+        addWordListOrDefault("agglomeratorOptions", "agglomerator", {"faceAreaPair", "algebraicPair"});
+        addWordListOrDefault("directSolveCoarsestOptions", "directSolveCoarsest", {"no", "yes"});
+
         // --- GAMG specification
         dGAMG_ = label(Switch(solverControls.getOrDefault<word>("GAMGTune", "no")));
 
@@ -217,7 +201,6 @@ Foam::PCGBandit::PCGBandit
     }
 
     {
-
         // --- No cache agglomeration if GAMG is tuned
         cacheAgglomeration_ = (static_ > -1 || !(wordGAMGTune[1] || labelGAMGTune[0] || labelGAMGTune[1]));
         if (cacheAgglomeration_)
@@ -234,22 +217,19 @@ void Foam::PCGBandit::queryLearner
     const scalar initialResidual
 ) const
 {
-
     label i = static_;
 
-    if (i == -1)
-    {
+    if (i == -1) {
 
-        if (Pstream::myProcNo() == 0)
-        {
+        if (Pstream::myProcNo() == 0) {
+
             dictionary& learningDict = learningDicts.subDictOrAdd(banditName_);
             label d = numDroptols_ + 1 + dGAMG_;
             #ifdef PCGB_DEBUG
-            Info << "PCGBandit INFO:" << endl;
+            Info<< "PCGBandit INFO:" << endl;
             #endif
 
-            if (randomUniform_)
-            {
+            if (randomUniform_) {
                 i = floor(scalar(d) * rndGen.sample01<scalar>());
             } else if (banditAlgorithm_ == "ThompsonSampling") {
                 #include "ThompsonSampling.H"
@@ -261,81 +241,77 @@ void Foam::PCGBandit::queryLearner
         Pstream::scatter(i);
 
         #ifdef PCGB_DEBUG
-        Info << "\tselected: ";
+        Info<< "\tselected: ";
     } else {
 
-        Info << "Static INFO: ";
+        Info<< "Static INFO: ";
         #endif
     }
 
-    if (i == numDroptols_)
-    {
+    if (i == numDroptols_) {
         subDict.set("preconditioner", "DIC");
         #ifdef PCGB_DEBUG
-        Info << "preconditioner=DIC" << endl;
+        Info<< "preconditioner=DIC" << endl;
         #endif
     } else if (i > numDroptols_) {
         i -= numDroptols_ + 1;
         subDict.set("preconditioner", "GAMG");
         #ifdef PCGB_DEBUG
-        Info << "preconditioner=GAMG";
+        Info<< "preconditioner=GAMG";
         #endif
-        if (not wordGAMGTune[0])
-        {
+        if (not wordGAMGTune[0]) {
             subDict.set("smoother", "DICGaussSeidel");
             #ifdef PCGB_DEBUG
-            Info << ", smoother=DICGaussSeidel";
+            Info<< ", smoother=DICGaussSeidel";
             #endif
         }
         subDict.set("cacheAgglomeration", cacheAgglomeration_);
         #ifdef PCGB_DEBUG
-        Info << ", cacheAgglomeration=" << cacheAgglomeration_;
+        Info<< ", cacheAgglomeration=" << cacheAgglomeration_;
         #endif
-        for (label j = labelGAMGParams.size() - 1; j >= 0; j--) {
-            if (labelGAMGTune[j])
-            {
+        for (label j = labelGAMGParams.size()-1; j >= 0; j--) {
+            if (labelGAMGTune[j]) {
                 word param = labelGAMGParams[j];
                 label size = labelGAMGSizes[j];
                 label option = GAMGOptions.get<List<label>>(param)[i % size];
                 i /= size;
                 subDict.set(param, option);
                 #ifdef PCGB_DEBUG
-                Info << ", " << param << "=" << option;
+                Info<< ", " << param << "=" << option;
                 #endif
             }
         }
-        for (label j = wordGAMGParams.size() - 1; j >= 0; j--) {
-            if (wordGAMGTune[j])
-            {
+        for (label j = wordGAMGParams.size()-1; j >= 0; j--) {
+            if (wordGAMGTune[j]) {
                 word param = wordGAMGParams[j];
                 label size = wordGAMGSizes[j];
                 word option = GAMGOptions.get<List<word>>(param)[i % size];
                 i /= size;
                 subDict.set(param, option);
                 #ifdef PCGB_DEBUG
-                Info << ", " << param << "=" << option;
+                Info<< ", " << param << "=" << option;
                 #endif
             }
         }
         #ifdef PCGB_DEBUG
-        Info << endl;
+        Info<< endl;
         #endif
     } else {
         subDict.set("preconditioner", "ICTC");
         scalar droptol;
-        if (i == 0)
-        {
+        if (i == 0) {
             droptol = pow(10.0, minLogDroptol_);
         } else {
-            droptol = pow(10.0, minLogDroptol_ + (maxLogDroptol_ - minLogDroptol_) * scalar(i) / scalar(numDroptols_ - 1));
+            droptol = pow(10.0, minLogDroptol_+(maxLogDroptol_-minLogDroptol_)*scalar(i)/scalar(numDroptols_-1));
         }
         subDict.set("droptol", droptol);
         #ifdef PCGB_DEBUG
-        Info << "preconditioner=ICTC, droptol=" << droptol << endl;
+        Info<< "preconditioner=ICTC, droptol=" << droptol << endl;
         #endif
     }
     preconditionerDict.set("preconditioner", subDict);
 }
+
 
 Foam::scalar Foam::PCGBandit::perIterationCostEstimate
 (
@@ -346,8 +322,7 @@ Foam::scalar Foam::PCGBandit::perIterationCostEstimate
     label nCells = matrix_.diag().size();
     label nnz = matrix_.lower().size();
     label cost = 2 * nnz + 6 * nCells;
-    if (preconditioner == "ICTC")
-    {
+    if (preconditioner == "ICTC") {
         nnz = Foam::debug::controlDict().get<label>("ICTC_NNZ");
         return returnReduce(scalar(cost + 2 * (nnz + nCells)), maxOp<scalar>());
     } else {
@@ -365,24 +340,20 @@ Foam::scalar Foam::PCGBandit::perIterationCostEstimate
     label nVcycles = subDict.getOrDefault<label>("nVcycles", 2);
     label nSweeps;
     word smoother = subDict.get<word>("smoother");
-    const dictionary& packed = preconditionerDict.subDict("preconditioner");
-    const GAMGAgglomeration *agglomeration =& GAMGAgglomeration::New(matrix_, packed);
+    const GAMGAgglomeration *agglomeration =& GAMGAgglomeration::New(matrix_, subDict);
 
     cost += 2 * nnz + nCells;
     for (label i = 0; i <= agglomeration->size(); i++) {
 
-        if (i > 0)
-        {
+        if (i > 0) {
             nCells = agglomeration->nCells(i - 1);
             nnz = agglomeration->nFaces(i - 1);
             cost += (2 * nnz + nCells) * nVcycles;
             nSweeps = 0;
-            if (nPreSweeps > 0)
-            {
+            if (nPreSweeps > 0) {
                 nSweeps += min(nPreSweeps + preSweepsLevelMultiplier * (i - 1), maxPreSweeps);
             }
-            if (nPostSweeps > 0)
-            {
+            if (nPostSweeps > 0) {
                 nSweeps += min(nPostSweeps + postSweepsLevelMultiplier * (i - 1), maxPostSweeps);
             }
         } else {
@@ -390,16 +361,13 @@ Foam::scalar Foam::PCGBandit::perIterationCostEstimate
         }
 
         nSweeps *= nVcycles;
-        if (smoother == "symGaussSeidel")
-        {
+        if (smoother == "symGaussSeidel") {
             cost += (4 * nnz + 2 * nCells) * nSweeps;
         } else {
-            if (smoother == "GaussSeidel" || smoother == "DICGaussSeidel")
-            {
+            if (smoother == "GaussSeidel" || smoother == "DICGaussSeidel") {
                 cost += (2 * nnz + nCells) * nSweeps;
             }
-            if (smoother == "DIC" || smoother == "DICGaussSeidel")
-            {
+            if (smoother == "DIC" || smoother == "DICGaussSeidel") {
                 cost += (4 * nnz + nCells) * nSweeps;
             }
         }
@@ -410,15 +378,15 @@ Foam::scalar Foam::PCGBandit::perIterationCostEstimate
 
 Foam::scalar Foam::PCGBandit::totalCostEstimate
 (
-    const label nIterations) const
+    const label nIterations
+) const
 {
 
     word preconditioner = subDict.get<word>("preconditioner");
     scalar pICE = perIterationCostEstimate(preconditioner);
     scalar cost;
 
-    if (preconditioner == "GAMG")
-    {
+    if (preconditioner == "GAMG") {
         cost = scalar(2 * matrix_.lower().size() + matrix_.diag().size());
     } else if (preconditioner == "ICTC") {
         cost = 10.0 * pICE;
@@ -427,12 +395,10 @@ Foam::scalar Foam::PCGBandit::totalCostEstimate
     }
 
     label backstopIter = maxIter_;
-    if (backstop_ == -1)
-    {
+    if (backstop_ == -1) {
         backstopIter = label(scalar(backstopIter) * perIterationCostEstimate("DIC") / pICE);
     }
-    if (nIterations > backstopIter)
-    {
+    if (nIterations > backstopIter) {
         cost += pICE * scalar(backstopIter) + perIterationCostEstimate("DIC") * scalar(nIterations - backstopIter + label(preconditioner != "DIC"));
     } else {
         cost += pICE * scalar(nIterations);
@@ -445,7 +411,8 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
 (
     solveScalarField& psi,
     const solveScalarField& source,
-    const direction cmpt) const
+    const direction cmpt
+) const
 {
 
     #ifdef DUMP_ABSOL
@@ -456,17 +423,17 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
     solveScalarField currentDiag = solveScalarField(matrix_.diag());
     solveScalarField currentLower = solveScalarField(matrix_.lower());
     solveScalarField currentTarget = solveScalarField(source);
-    Info << "\tsq Frob norm of current diag: " << gSum(sqr(currentDiag)) << endl;
-    Info << "\tsq Frob norm of current lower: " << gSum(sqr(currentLower)) << endl;
-    Info << "\tsq Eucl norm of current target: " << gSum(sqr(currentTarget)) << endl;
+    Info<< "\tsq Frob norm of current diag: " << gSum(sqr(currentDiag)) << endl;
+    Info<< "\tsq Frob norm of current lower: " << gSum(sqr(currentLower)) << endl;
+    Info<< "\tsq Eucl norm of current target: " << gSum(sqr(currentTarget)) << endl;
     if (initialDiags.found(banditName_))
     {
-        Info << "\tsq Frob dist from initial diag: " << gSum(sqr(currentDiag - initialDiags.get<solveScalarField>(banditName_))) << endl;
-        Info << "\tsq Frob dist from initial lower: " << gSum(sqr(currentLower - initialLowers.get<solveScalarField>(banditName_))) << endl;
-        Info << "\tsq Eucl norm from initial target: " << gSum(sqr(currentTarget - initialTargets.get<solveScalarField>(banditName_))) << endl;
-        Info << "\tsq Frob dist from previous diag: " << gSum(sqr(currentDiag - previousDiags.get<solveScalarField>(banditName_))) << endl;
-        Info << "\tsq Frob dist from previous lower: " << gSum(sqr(currentLower - previousLowers.get<solveScalarField>(banditName_))) << endl;
-        Info << "\tsq Eucl norm from previous target: " << gSum(sqr(currentTarget - previousTargets.get<solveScalarField>(banditName_))) << endl;
+        Info<< "\tsq Frob dist from initial diag: " << gSum(sqr(currentDiag - initialDiags.get<solveScalarField>(banditName_))) << endl;
+        Info<< "\tsq Frob dist from initial lower: " << gSum(sqr(currentLower - initialLowers.get<solveScalarField>(banditName_))) << endl;
+        Info<< "\tsq Eucl norm from initial target: " << gSum(sqr(currentTarget - initialTargets.get<solveScalarField>(banditName_))) << endl;
+        Info<< "\tsq Frob dist from previous diag: " << gSum(sqr(currentDiag - previousDiags.get<solveScalarField>(banditName_))) << endl;
+        Info<< "\tsq Frob dist from previous lower: " << gSum(sqr(currentLower - previousLowers.get<solveScalarField>(banditName_))) << endl;
+        Info<< "\tsq Eucl norm from previous target: " << gSum(sqr(currentTarget - previousTargets.get<solveScalarField>(banditName_))) << endl;
     } else {
         initialDiags.add<solveScalarField>(banditName_, currentDiag);
         initialLowers.add<solveScalarField>(banditName_, currentLower);
@@ -478,9 +445,11 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
     #endif
 
     // --- Setup class containing solver performance data
-    solverPerformance solverPerf(
+    solverPerformance solverPerf
+    (
         lduMatrix::preconditioner::getName(controlDict_) + typeName,
-        fieldName_);
+        fieldName_
+    );
     clockValue preconstructTime;
     clockValue iterationTime;
     clockValue learningTime;
@@ -492,13 +461,13 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
     autoPtr<lduMatrix::preconditioner> preconPtr;
 
     label nCells = psi.size();
-    solveScalar *__restrict__ psiPtr = psi.begin();
+    solveScalar* __restrict__ psiPtr = psi.begin();
 
     solveScalarField pA(nCells);
-    solveScalar *__restrict__ pAPtr = pA.begin();
+    solveScalar* __restrict__ pAPtr = pA.begin();
 
     solveScalarField wA(nCells);
-    solveScalar *__restrict__ wAPtr = wA.begin();
+    solveScalar* __restrict__ wAPtr = wA.begin();
 
     solveScalar wArA = solverPerf.great_;
     solveScalar wArAold = wArA;
@@ -508,41 +477,45 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
 
     // --- Calculate initial residual field
     solveScalarField rA(source - wA);
-    solveScalar *__restrict__ rAPtr = rA.begin();
+    solveScalar* __restrict__ rAPtr = rA.begin();
 
-    matrix().setResidualField(
+    matrix().setResidualField
+    (
         ConstPrecisionAdaptor<scalar, solveScalar>(rA)(),
         fieldName_,
-        true);
+        true
+    );
 
     // --- Calculate normalisation factor
     solveScalar normFactor = this->normFactor(psi, source, wA, pA);
 
     if ((log_ >= 2) || (lduMatrix::debug >= 2))
     {
-        Info << "   Normalisation factor = " << normFactor << endl;
+        Info<< "   Normalisation factor = " << normFactor << endl;
     }
 
     // --- Calculate normalised residual norm
     solverPerf.initialResidual() =
-        gSumMag(rA, matrix().mesh().comm()) / normFactor;
+        gSumMag(rA, matrix().mesh().comm()) 
+        /normFactor;
     solverPerf.finalResidual() = solverPerf.initialResidual();
 
     for (label backstop = 0; backstop <= label(backstop_ != 0); backstop++) {
 
         // --- Check convergence, solve if not converged
-        if (
-            minIter_ > 0 || !solverPerf.checkConvergence(tolerance_, relTol_, log_))
+        if 
+        (
+            minIter_ > 0 
+        || !solverPerf.checkConvergence(tolerance_, relTol_, log_)
+        )
         {
 
             // --- Select and construct the preconditioner
-            if (backstop)
-            {
+            if (backstop) {
 
                 // --- Revert to backstopping preconditioner
                 preconstructTime += preconstructTime.now();
-                if (subDict.get<word>("preconditioner") != "DIC")
-                {
+                if (subDict.get<word>("preconditioner") != "DIC") {
                     preconPtr = lduMatrix::preconditioner::New(*this, backstopDict);
                 }
                 preconstructTime -= clockValue::now();
@@ -558,8 +531,7 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
                 preconPtr = lduMatrix::preconditioner::New(*this, preconditionerDict);
 
                 // --- Default backstop iteration computed via a cost estimate ratio
-                if (backstop_ == -1)
-                {
+                if (backstop_ == -1) {
                     backstopIter = label(scalar(maxIter) * perIterationCostEstimate("DIC") / perIterationCostEstimate(subDict.get<word>("preconditioner")));
                     maxIter = backstopIter;
                 }
@@ -582,13 +554,17 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
 
                 if (solverPerf.nIterations() == 0 || solverPerf.nIterations() == backstopIter)
                 {
-                    for (label cell = 0; cell < nCells; cell++) {
+                    for (label cell = 0; cell < nCells; cell++) 
+                    {
                         pAPtr[cell] = wAPtr[cell];
                     }
-                } else {
-                    solveScalar beta = wArA / wArAold;
+                } 
+                else 
+                {
+                    solveScalar beta = wArA/wArAold;
 
-                    for (label cell = 0; cell < nCells; cell++) {
+                    for (label cell = 0; cell < nCells; cell++) 
+                    {
                         pAPtr[cell] = wAPtr[cell] + beta * pAPtr[cell];
                     }
                 }
@@ -599,47 +575,52 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
                 solveScalar wApA = gSumProd(wA, pA, matrix().mesh().comm());
 
                 // --- Test for singularity
-                if (solverPerf.checkSingularity(mag(wApA) / normFactor))
-                    break;
+                if (solverPerf.checkSingularity(mag(wApA) / normFactor)) break;
 
                 // --- Update solution and residual:
 
-                solveScalar alpha = wArA / wApA;
+                solveScalar alpha = wArA/wApA;
 
-                for (label cell = 0; cell < nCells; cell++) {
+                for (label cell = 0; cell < nCells; cell++) 
+                {
                     psiPtr[cell] += alpha * pAPtr[cell];
                     rAPtr[cell] -= alpha * wAPtr[cell];
                 }
 
                 solverPerf.finalResidual() =
-                    gSumMag(rA, matrix().mesh().comm()) / normFactor;
+                    gSumMag(rA, matrix().mesh().comm()) 
+                    /normFactor;
 
-            } while (
+            } while 
+            (
                 (
-                    ++solverPerf.nIterations() < maxIter && !solverPerf.checkConvergence(tolerance_, relTol_, log_)) ||
-                solverPerf.nIterations() < minIter_);
+                  ++solverPerf.nIterations() < maxIter
+                && !solverPerf.checkConvergence(tolerance_, relTol_, log_)
+                )
+             || solverPerf.nIterations() < minIter_
+            );
             iterationTime -= clockValue::now();
         }
 
         // --- Exit if converged or if already tried backstopping
         if (backstop == 1 || solverPerf.checkConvergence(tolerance_, relTol_, log_))
         {
-            matrix().setResidualField(
+            matrix().setResidualField
+            (
                 ConstPrecisionAdaptor<scalar, solveScalar>(rA)(),
                 fieldName_,
-                false);
+                false
+            );
             break;
-        }
+        } 
 
         Info << "PCG backstopping at iteration " << backstopIter << endl;
-        if (backstop_ == -1)
-        {
+        if (backstop_ == -1) {
             maxIter += maxIter_;
         } else {
             maxIter += backstop_;
         }
-        if (subDict.get<word>("preconditioner") == "DIC")
-        {
+        if (subDict.get<word>("preconditioner") == "DIC") {
             backstopIter = maxIter;
         } else {
             backstopDict.set("preconditioner", "DIC");
@@ -649,29 +630,17 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
     solverTime -= clockValue::now();
     learningTime += clockValue::now();
     scalar costEstimate = 0.0;
-    if (solverPerf.nIterations() > 0)
-    {
-        Info << "COSTDBG precond=" << subDict.get<word>("preconditioner")
-             << " nPre=" << subDict.getOrDefault<label>("nPreSweeps", -999)
-             << " nPost=" << subDict.getOrDefault<label>("nPostSweeps", -999)
-             << " nFine=" << subDict.getOrDefault<label>("nFinestSweeps", -999)
-             << " nV=" << subDict.getOrDefault<label>("nVcycles", -999)
-             << " smoother=" << subDict.getOrDefault<word>("smoother", "<unset>")
-             << " iters=" << solverPerf.nIterations()
-             << " pICE=" << perIterationCostEstimate(subDict.get<word>("preconditioner"))
-             << endl;
+    if (solverPerf.nIterations() > 0) {
 
         // --- Compute solver cost
-        if (deterministic_)
-        {
+        if (deterministic_) {
             costEstimate = 1e-9 * totalCostEstimate(solverPerf.nIterations());
         } else {
             costEstimate = -solverTime;
         }
 
         // --- Pass cost to learning algorithm
-        if (static_ == -1 && !randomUniform_ && Pstream::myProcNo() == 0)
-        {
+        if (static_ == -1 && !randomUniform_ && Pstream::myProcNo() == 0) {
             dictionary& learningDict = learningDicts.subDict(banditName_);
             learningDict.set<scalar>("loss", costEstimate);
         }
@@ -679,23 +648,23 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
     learningTime -= clockValue::now();
     PCGTime -= solverTime;
 
-    Info << "INFO: banditName=" << banditName_;
-    Info << ", fieldName=" << fieldName_;
-    Info << ", relativeTolerance=" << relTol_;
-    Info << ", tolerance=" << tolerance_;
-    Info << ", initialResidual=" << solverPerf.initialResidual();
-    Info << ", finalResidual=" << solverPerf.finalResidual();
-    Info << ", nIterations=" << solverPerf.nIterations();
-    Info << ", preconstructTime=" << -preconstructTime;
-    Info << ", iterationTime=" << -iterationTime;
-    Info << ", learningTime=" << -learningTime;
-    Info << ", solverTime=" << -solverTime;
-    Info << ", PCGTime=" << PCGTime;
+    Info<< "INFO: banditName=" << banditName_;
+    Info<< ", fieldName=" << fieldName_;
+    Info<< ", relativeTolerance=" << relTol_;
+    Info<< ", tolerance=" << tolerance_;
+    Info<< ", initialResidual=" << solverPerf.initialResidual();
+    Info<< ", finalResidual=" << solverPerf.finalResidual();
+    Info<< ", nIterations=" << solverPerf.nIterations();
+    Info<< ", preconstructTime=" << -preconstructTime;
+    Info<< ", iterationTime=" << -iterationTime;
+    Info<< ", learningTime=" << -learningTime;
+    Info<< ", solverTime=" << -solverTime;
+    Info<< ", PCGTime=" << PCGTime;
     if (deterministic_ && solverPerf.nIterations() > 0)
     {
-        Info << ", costEstimate=" << costEstimate;
+        Info<< ", costEstimate=" << costEstimate;
     }
-    Info << endl;
+    Info<< endl;
 
     #ifdef DUMP_ABSOL
     #include "finishDump.H"
@@ -712,7 +681,8 @@ Foam::solverPerformance Foam::PCGBandit::solve
 ) const
 {
     PrecisionAdaptor<solveScalar, scalar> tpsi(psi_s);
-    return scalarSolve(
+    return scalarSolve
+    (
         tpsi.ref(),
         ConstPrecisionAdaptor<solveScalar, scalar>(source)(),
         cmpt
