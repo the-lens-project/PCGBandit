@@ -77,7 +77,7 @@ The available `<param>Tune` keywords and their defaults are:
 | `nFinestSweepsTune` | `2` |
 | `nVcyclesTune` | `1 2` |
 
-Additional optional keywords:
+Additional optional keywords (in addition to regular PCG keywords):
 | Keyword | Default | Description |
 |---------|---------|-------------|
 | `residualContext` | `no` | whether to tune the `Final` solve in a correction loop separately |
@@ -88,7 +88,6 @@ Additional optional keywords:
 | `backstop` | `-1` | backstop iteration limit (`-1` = auto) |
 | `static` | `-1` | index of static preconditioner schedule (`-1` = off) |
 | `deterministic` | `no` | deterministic mode for reproducible runs |
-| `maxIter` | `1000` | maximum PCG iterations |
 
 When tuning GAMG smoothers, you may also specify `ICTC` or `ICTCGaussSeidel` as options in `smootherTune` or `coarsestSmootherTune`; this approach is best-used with `FGAMG` loaded.
 These will automatically expand to a family of options with different drop tolerances.

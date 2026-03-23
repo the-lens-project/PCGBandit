@@ -1,6 +1,6 @@
 #!/bin/sh
 
-DEFAULT="solver PCGBandit; preconditioner separate; maxIter 2000; backstop 10000;"
+DEFAULT="solver PCGBandit; preconditioner separate; backstop 10000;"
 
 NAME=${1:-pitzDaily}
 SEED=0
