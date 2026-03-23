@@ -11,6 +11,7 @@
 #include "GAMGAgglomeration.H"
 #include "Pstream.H"
 #include "Random.H"
+#include "BuildSimMatrix.C"
 
 //#define PCGB_DEBUG
 //#define DUMP_ABSOL
@@ -241,6 +242,8 @@ Foam::PCGBandit::PCGBandit
         Info<< "Preconditioner configurations for " << banditName_ << " : " << preconditionerDictsMap[banditName_] << endl;
         #endif
 
+	// --- Build similarity Matrix
+	similarityMatrix_ = preconditionerSimilarityMatrix(preconditionerDictsMap[banditName_]);
     }
 }
 

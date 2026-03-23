@@ -1,44 +1,37 @@
 /*---------------------------------------------------------------------------*\
-
 Class
     Foam::PCGBandit
-
 Group
     grpLduMatrixSolvers
-
 Description
-    Preconditioner conjugate gradient solver for symmetric lduMatrices 
-    that uses Tsallis-INF (as described in Zimmert & Seldin (2021) to 
+    Preconditioner conjugate gradient solver for symmetric lduMatrices
+    that uses Tsallis-INF (as described in Zimmert & Seldin (2021) to
     select which preconditioner to use.
-
 SourceFiles
     PCGBandit.C
-
 \*---------------------------------------------------------------------------*/
-
 #ifndef PCGBandit_H
 #define PCGBandit_H
-
 #include "lduMatrix.H"
-
+#include "RectangularMatrix.H"
+#include "Pair.H"
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
-
 namespace Foam
 {
-
 /*---------------------------------------------------------------------------*\
                              Class PCGBandit Declaration
 \*---------------------------------------------------------------------------*/
-
 class PCGBandit
 :
     public lduMatrix::solver
 {
-    // Private Member Functions
 
+
+private:
+
+    // Private Member Functions
         //- No copy construct
         PCGBandit(const PCGBandit&) = delete;
-
         //- No copy assignment
         void operator=(const PCGBandit&) = delete;
 
@@ -52,18 +45,30 @@ class PCGBandit
     label static_;
 
     void queryLearner(const scalar initialResidual) const;
-
     scalar perIterationCostEstimate(const word preconditioner) const;
     scalar totalCostEstimate(const label nIterations) const;
 
+    scalar smootherToDroptol(const word& smootherName) const;
+    bool smootherIsICTCLike(const word& smootherName) const;
+    Pair<scalar> effectiveICTCParams(const dictionary& preconDict) const;
+    scalar ICTCSimilarity
+    (
+    	const scalar droptol_i,
+	const scalar coarsestDroptol_i,
+    	const scalar droptol_j,
+    	const scalar coarsestDroptol_j
+    ) const;
+    scalar similarityIC(const dictionary& preconDict_i, const dictionary& preconDict_j) const;
+    scalar similarityGAMG(const dictionary& preconDict_i, const dictionary& preconDict_j) const;
+    RectangularMatrix<scalar> preconditionerSimilarityMatrix(const List<dictionary>& preconditionerDicts) const;
+
+    RectangularMatrix<scalar> similarityMatrix_;
 
 public:
-
     //- Runtime type information
     TypeName("PCGBandit");
 
     // Constructors
-
         //- Construct from matrix components and solver controls
         PCGBandit
         (
@@ -75,13 +80,10 @@ public:
             const dictionary& solverControls
         );
 
-
     //- Destructor
     virtual ~PCGBandit() = default;
 
-
     // Member Functions
-
         //- Solve the matrix with this solver
         virtual solverPerformance scalarSolve
         (
@@ -89,7 +91,6 @@ public:
             const solveScalarField& source,
             const direction cmpt=0
         ) const;
-
         //- Solve the matrix with this solver
         virtual solverPerformance solve
         (
@@ -98,14 +99,8 @@ public:
             const direction cmpt=0
         ) const;
 };
-
-
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
-
 } // End namespace Foam
-
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
-
 #endif
-
 // ************************************************************************* //
