@@ -11,6 +11,7 @@
 #include "GAMGAgglomeration.H"
 #include "Pstream.H"
 #include "Random.H"
+#include "similarityMatrix.C"
 
 //#define PCGB_DEBUG
 //#define DUMP_ABSOL
@@ -265,8 +266,10 @@ void Foam::PCGBandit::queryLearner
                 i = floor(scalar(d) * rndGen.sample01<scalar>());
             } else if (banditAlgorithm_ == "ThompsonSampling") {
                 #include "ThompsonSampling.H"
-            } else {
-                #include "TsallisINF.H"
+            } else if (banditAlgorithm_ == "simTsallisINF.H") {
+		#include "simTsallisINF.H"
+	    } else {
+		#include "TsallisINF.H"
             }
         }
 
@@ -279,6 +282,7 @@ void Foam::PCGBandit::queryLearner
         Info<< "Static Preconditioner: ";
         #endif
     }
+
 
     subDict = preconditionerDicts[i];
     preconditionerDict.set("preconditioner", subDict);
