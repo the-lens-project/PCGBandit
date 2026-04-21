@@ -198,9 +198,6 @@ Foam::PCGBandit::PCGBandit
             if (noCacheAgglomeration.found(param) && GAMGOptions[j].size() > 1) {
                 cacheAgglomeration = false; // turn off cacheAgglomeration if tuning any param that affects agglomeration
             }
-
-            Info << " options=" << GAMGOptions[3]
-                 << " dGAMG=" << dGAMG << endl;
         }
 
         if (cacheAgglomeration || static_ > -1) {
