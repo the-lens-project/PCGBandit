@@ -8,7 +8,53 @@ if (t == 0.0) {
 
     t += 1.0;
     learningDict.set<scalar>("t", t);
-    probs = 1.0 / scalar(d);
+    
+    // use numDroptols instead of ictc loop
+    label numICTC = controlDict_.get<label>("numDroptols");
+    
+    // p = 0 gives uniform
+    label priorCenter =
+        controlDict_.getOrDefault<label>("priorCenter", numICTC/2);
+    
+    // priorPower default is uniform (0)
+    scalar priorPower =
+        controlDict_.getOrDefault<scalar>("priorPower", 0.0);
+    
+    // validate priorCenter is in valid range
+    if (priorCenter < 0 || priorCenter >= numICTC)
+    {
+        WarningInFunction
+            << "priorCenter = " << priorCenter
+            << " is outside range [0, " << numICTC-1 << "]"
+            << nl << "    using nearest valid arm instead" << endl;
+        
+        priorCenter = max(label(0), min(priorCenter, numICTC-1));
+    }
+    
+    // using: W_i = (1 / (1 + |i-k|))^p
+    // where k = priorCenter, i = arm index
+    
+    // compute weights for ICTC arms
+    for (label k = 0; k < numICTC; k++)
+    {
+        scalar dist = mag(scalar(k) - scalar(priorCenter));
+        scalar base = 1.0 / (1.0 + dist);
+        probs[k] = pow(base, priorPower);
+    }
+    
+    // DIC and GAMG get same weight as center to prevent downweighting
+    for (label k = numICTC; k < d; k++)
+    {
+        probs[k] = 1.0;
+    }
+    
+    // normalize so weights sum to 1
+    probs /= sum(probs);
+    
+    Info<< "using distance prior: center=" << priorCenter
+        << ", power=" << priorPower << endl;
+    Info<< "initial probs: " << probs << endl;
+    
     scalarField IW(d, 0.0);
     learningDict.set<scalarField>("IW", IW);
     if (lossEstimator_ == "RV") {
@@ -18,7 +64,6 @@ if (t == 0.0) {
 
 } else {
 
-    // --- Process solver feedback
     scalarField IW = learningDict.get<scalarField>("IW");
     scalar scale = learningDict.getOrAdd<scalar>("scale", 1.0);
     scalar loss = learningDict.getOrAdd<scalar>("loss", 0.0);
@@ -31,7 +76,6 @@ if (t == 0.0) {
         learningDict.set<scalar>("t", t);
     }
 
-    // --- Compute loss estimator
     scalarField lhat = IW / scale;
     scalar eta = 2.0 / sqrt(t);
     if (lossEstimator_ == "RV") {
@@ -39,10 +83,8 @@ if (t == 0.0) {
         eta *= 2.0;
     }
 
-    // --- Saved initialization for Newton solve
     scalar x = learningDict.getOrAdd<scalar>("x", -1.0);
 
-    // --- Newton solve
     scalar update;
     label j;
     for (j = 0; j < maxNewtonIter; j++) {
@@ -66,7 +108,6 @@ if (t == 0.0) {
 Info<< "TsallisINF Probabilities: " << probs << endl;
 #endif
 
-// --- Naive random sampling
 scalar r = rndGen.sample01<scalar>() * sum(probs);
 scalar cumulative = 0.0;
 for (i = 0; i < d; i++) {
@@ -75,10 +116,10 @@ for (i = 0; i < d; i++) {
         break;
     }
 }
+
 learningDict.set<label>("i", i);
 learningDict.set<scalar>("p", probs[i]);
 
-// --- Computes shift for the reduced variance case
 if (lossEstimator_ == "RV" && t >= 16.0) {
     scalarField shift = learningDict.get<scalarField>("shift");
     for (label j = 0; j < d; j++) {
