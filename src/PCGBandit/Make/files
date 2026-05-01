@@ -1,2 +1,4 @@
 PCGBandit.C
+DecomposedLaplacian.C
+similarityMatrix.C
 LIB = $(FOAM_USER_LIBBIN)/libPCGBandit

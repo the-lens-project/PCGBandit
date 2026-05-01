@@ -4,8 +4,8 @@ scalar tolerance = 1e-8;
 scalarField probs(d);
 scalar t = learningDict.getOrAdd("t", 0.0);
 
-SymmetricSquareMatrix<scalar> similarityMatrix_;
-scalarField columnSums_;
+SquareMatrix<scalar> similarityMatrix;
+scalarField columnSums;
 
 if (t == 0.0) {
 
@@ -20,23 +20,23 @@ if (t == 0.0) {
     }
 
     // Constructs the matrix
-    similarityMatrix_ = preconditionerSimilarityMatrix(preconditionerDictsMap[banditName_]);
-    learningDict.set("similarityMatrix", similarityMatrix_);
+    similarityMatrix = preconditionerSimilarityMatrix(preconditionerDictsMap[banditName_]);
+    learningDict.set("similarityMatrix", similarityMatrix);
 
     // Finds the sum of each column of the similarity matrix (to be used for RV estimator)
     if (lossEstimator_ == "RV") {
-	columnSums_.setSize(d, 0.0);
+	    columnSums.setSize(d, 0.0);
     	for (label i = 0; i < d; i++) {
-	    for (label j = 0; j < d; j++) {
-                columnSums_[j] += similarityMatrix_(i, j);
+            for (label j = 0; j < d; j++) {
+                    columnSums[j] += similarityMatrix(i, j);
             }
         }
-        learningDict.set("columnSums", columnSums_);
+        learningDict.set("columnSums", columnSums);
     }
 
 } else {
 
-    similarityMatrix_ = learningDict.get<SymmetricSquareMatrix<scalar>>("similarityMatrix");
+    similarityMatrix = learningDict.get<SquareMatrix<scalar>>("similarityMatrix");
 
     // --- Process solver feedback
     scalarField IW = learningDict.get<scalarField>("IW");
@@ -45,8 +45,7 @@ if (t == 0.0) {
     
     if (loss > 0.0) {
 
-	IW += (loss / learningDict.get<scalar>("p")) * scalarField(similarityMatrix_.subColumn(learningDict.get<label>("i")));
-
+	    IW += (loss / learningDict.get<scalar>("p")) * scalarField(similarityMatrix.subColumn(learningDict.get<label>("i")));
         learningDict.set<scalarField>("IW", IW);
         scale = (scale * (t - 1.0) + loss) / t;
         learningDict.set<scalar>("scale", scale);
@@ -108,18 +107,18 @@ learningDict.set<scalar>("p", probs[i]);
 
 // --- Computes shift for the reduced variance case
 if (lossEstimator_ == "RV" && t >= 16.0) {
+    
     scalarField shift = learningDict.get<scalarField>("shift");
-    columnSums_ = learningDict.get<scalarField>("columnSums");
-
-    scalarField lossFactor = similarityMatrix_.subColumn(i);
+    columnSums = learningDict.get<scalarField>("columnSums");
+    scalarField lossFactor = similarityMatrix.subColumn(i);
 
     for (label j = 0; j < d; j++) {
 
-	scalar p_i = probs[i];
-	scalar p_j = probs[j];
+        scalar p_i = probs[i];
+        scalar p_j = probs[j];
 
         if (t * p_j >= 16.0) {
-            shift[j] += 0.5*columnSums_[j];
+            shift[j] += 0.5*columnSums[j];
             shift[j] -= (0.5 / p_i)*lossFactor[j];
         }
     }

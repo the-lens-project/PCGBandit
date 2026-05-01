@@ -11,7 +11,8 @@
 #include "GAMGAgglomeration.H"
 #include "Pstream.H"
 #include "Random.H"
-#include "similarityMatrix.C"
+
+#include "HashPtrTable.H"
 
 //#define PCGB_DEBUG
 //#define DUMP_ABSOL
@@ -22,6 +23,7 @@ namespace Foam
 {
 
     clockValue PCGTime = clockValue();
+    scalar PCGCost = 0.0;
 
     defineTypeNameAndDebug(PCGBandit, 0);
 
@@ -58,6 +60,8 @@ namespace Foam
     #ifdef DUMP_ABSOL
     #include "initializeDumping.H"
     #endif
+
+    HashPtrTable<DecomposedLaplacian> nonSerializableObjects_;
 
 }
 
@@ -267,9 +271,11 @@ void Foam::PCGBandit::queryLearner
             } else if (banditAlgorithm_ == "ThompsonSampling") {
                 #include "ThompsonSampling.H"
             } else if (banditAlgorithm_ == "simTsallisINF") {
-		#include "simTsallisINF.H"
-	    } else {
-		#include "TsallisINF.H"
+                #include "simTsallisINF.H"
+            } else if (banditAlgorithm_ == "SpeKL") {
+                #include "SpeKL.H"
+            } else {
+                #include "TsallisINF.H"
             }
         }
 
@@ -624,6 +630,8 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
     Info<< ", PCGTime=" << PCGTime;
     if (deterministic_ && solverPerf.nIterations() > 0) {
         Info<< ", costEstimate=" << costEstimate;
+        PCGCost += costEstimate;
+        Info<< ", PCGCost=" << PCGCost;
     }
     Info<< endl;
 

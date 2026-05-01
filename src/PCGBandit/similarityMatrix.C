@@ -1,6 +1,11 @@
+#include "similarityMatrix.H"
+
+namespace Foam
+{
+
 // Parse the droptol scalar from a word-encoded smoother name.
 // e.g. "ICTCGaussSeidel_m3p5" -> 10^-3.5, "DICGaussSeidel" -> 1.0 (no suffix)
-Foam::scalar Foam::PCGBandit::smootherToDroptol(const word& smootherName) const
+static scalar smootherToDroptol(const word& smootherName)
 {
     label underscoreIdx = smootherName.rfind('_');
     if (underscoreIdx == -1) return 1.0;
@@ -23,7 +28,7 @@ Foam::scalar Foam::PCGBandit::smootherToDroptol(const word& smootherName) const
 }
 
 // Returns true if the smoother is ICTC-like (i.e. has a droptol parameter).
-bool Foam::PCGBandit::smootherIsICTCLike(const word& smootherName) const
+static bool smootherIsICTCLike(const word& smootherName)
 {
     return smootherName.startsWith("ICTC_") || smootherName == "DIC";
 }
@@ -31,10 +36,10 @@ bool Foam::PCGBandit::smootherIsICTCLike(const word& smootherName) const
 // Extract the effective (droptol, coarsestDroptol) pair from a GAMG dict.
 // For DIC, both are 1.0. If no coarsestSmoother is specified, defaults
 // to the same droptol as the main smoother.
-Foam::Pair<Foam::scalar> Foam::PCGBandit::effectiveICTCParams
+static Pair<scalar> effectiveICTCParams
 (
     const dictionary& preconDict
-) const
+)
 {
     word smoother = preconDict.get<word>("smoother");
 
@@ -52,26 +57,26 @@ Foam::Pair<Foam::scalar> Foam::PCGBandit::effectiveICTCParams
 
 // Similarity between two ICTC-like smoothers based on log-ratio of droptols.
 // Each component contributes 0.5, giving a score in [0, 1].
-Foam::scalar Foam::PCGBandit::ICTCSimilarity
+static scalar ICTCSimilarity
 (
     const scalar droptol_i,
     const scalar coarsestDroptol_i,
     const scalar droptol_j,
     const scalar coarsestDroptol_j
-) const
+)
 {
-    scalar logRatioDroptol  = mag(log(droptol_i / droptol_j));
-    scalar logRatioCoarsest = mag(log(coarsestDroptol_i / coarsestDroptol_j));
+    scalar logRatioDroptol  = mag(log10(droptol_i / droptol_j));
+    scalar logRatioCoarsest = mag(log10(coarsestDroptol_i / coarsestDroptol_j));
     return 0.5 / (1.0 + logRatioDroptol) + 0.5 / (1.0 + logRatioCoarsest);
 }
 
 // Similarity between two standalone IC preconditioners based on log-ratio of droptols.
 // Score in [0, 1], equal to 1 when droptols are identical.
-Foam::scalar Foam::PCGBandit::similarityIC
+static scalar similarityIC
 (
     const dictionary& preconDict_i,
     const dictionary& preconDict_j
-) const
+)
 {
     word type_i = preconDict_i.get<word>("preconditioner");
     word type_j = preconDict_j.get<word>("preconditioner");
@@ -80,18 +85,18 @@ Foam::scalar Foam::PCGBandit::similarityIC
     scalar droptol_i = (type_i == "DIC") ? 1.0 : preconDict_i.get<scalar>("droptol");
     scalar droptol_j = (type_j == "DIC") ? 1.0 : preconDict_j.get<scalar>("droptol");
 
-    scalar logRatioDroptol = mag(log(droptol_i / droptol_j));
+    scalar logRatioDroptol = mag(log10(droptol_i / droptol_j));
     return 1.0 / (1.0 + logRatioDroptol);
 }
 
 // Similarity between two GAMG configurations. Score is the average of three
 // components: smoother similarity, mergeLevels match, and nCellsInCoarsest proximity.
 // Each component contributes equally, giving a score in [0, 1].
-Foam::scalar Foam::PCGBandit::similarityGAMG
+static scalar similarityGAMG
 (
     const dictionary& preconDict_i,
     const dictionary& preconDict_j
-) const
+)
 {
     scalar score = 0.0;
 
@@ -123,7 +128,7 @@ Foam::scalar Foam::PCGBandit::similarityGAMG
     // --- nCellsInCoarsest similarity: log-ratio based
     scalar nCells_i = preconDict_i.getOrDefault<label>("nCellsInCoarsestLevel", 10);
     scalar nCells_j = preconDict_j.getOrDefault<label>("nCellsInCoarsestLevel", 10);
-    scalar logRatioNCells = mag(log(nCells_i / nCells_j));
+    scalar logRatioNCells = mag(log10(nCells_i / nCells_j));
     score += 1.0 / (1.0 + logRatioNCells);
 
     return score / 3.0;
@@ -132,13 +137,13 @@ Foam::scalar Foam::PCGBandit::similarityGAMG
 // Build the full similarity matrix over all preconditioner configurations.
 // S[i][j] is the similarity between arm i and arm j, in [0, 1].
 // Cross-type similarity (IC vs GAMG) is always 0.
-Foam::SymmetricSquareMatrix<Foam::scalar> Foam::PCGBandit::preconditionerSimilarityMatrix
+SquareMatrix<scalar> preconditionerSimilarityMatrix
 (
     const List<dictionary>& preconditionerDicts
-) const
+)
 {
     label numConfigs = preconditionerDicts.size();
-    SymmetricSquareMatrix<scalar> similarityMatrix(numConfigs, 0.0);
+    SquareMatrix<scalar> similarityMatrix(numConfigs, 0.0);
 
     for (label i = 0; i < numConfigs; ++i)
     {
@@ -170,3 +175,5 @@ Foam::SymmetricSquareMatrix<Foam::scalar> Foam::PCGBandit::preconditionerSimilar
 
     return similarityMatrix;
 }
+
+} // End namespace Foam

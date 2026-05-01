@@ -13,8 +13,8 @@ SourceFiles
 #ifndef PCGBandit_H
 #define PCGBandit_H
 #include "lduMatrix.H"
-#include "SymmetricSquareMatrix.H"
-#include "Pair.H"
+#include "similarityMatrix.H"
+#include "DecomposedLaplacian.H"
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 namespace Foam
 {
@@ -47,14 +47,6 @@ private:
     void queryLearner(const scalar initialResidual) const;
     scalar perIterationCostEstimate(const word preconditioner) const;
     scalar totalCostEstimate(const label nIterations) const;
-
-    scalar smootherToDroptol(const word& smootherName) const;
-    bool smootherIsICTCLike(const word& smootherName) const;
-    Pair<scalar> effectiveICTCParams(const dictionary& preconDict) const;
-    scalar ICTCSimilarity(const scalar droptol_i, const scalar coarsestDroptol_i, const scalar droptol_j, const scalar coarsestDroptol_j) const;
-    scalar similarityIC(const dictionary& preconDict_i, const dictionary& preconDict_j) const;
-    scalar similarityGAMG(const dictionary& preconDict_i, const dictionary& preconDict_j) const;
-    SymmetricSquareMatrix<scalar> preconditionerSimilarityMatrix(const List<dictionary>& preconditionerDicts) const;
 
 public:
     //- Runtime type information
