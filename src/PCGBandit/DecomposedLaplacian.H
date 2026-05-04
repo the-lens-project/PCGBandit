@@ -4,7 +4,6 @@
 
 #ifndef DecomposedLaplacian_H
 #define DecomposedLaplacian_H
-
 #include "DiagonalMatrix.H"
 #include "SquareMatrix.H"
 #include "LLTMatrix.H"
@@ -67,7 +66,8 @@ public:
         LLTMatrix<scalar> cholLaplacianPlusPi(const scalarField& Pi, const scalar mu) const;
         scalar dEff(scalar mu) const;
         scalarField DOptimalDesign(const scalar mu) const;
-        Pair<scalarField> HatAndBonus(const scalarField& Pi, const scalar mu, const label row) const;
+        scalarField getHat(const scalarField& Pi, const scalar mu, const label row) const;
+        Pair<scalarField> getHatAndBonus(const scalarField& Pi, const scalar mu, const label row) const;
 
 };
 

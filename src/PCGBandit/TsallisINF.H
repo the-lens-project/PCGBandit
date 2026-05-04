@@ -1,6 +1,3 @@
-label maxNewtonIter = 100;
-scalar tolerance = 1e-8;
-
 scalarField probs(d);
 scalar t = learningDict.getOrAdd("t", 0.0);
 
@@ -39,26 +36,9 @@ if (t == 0.0) {
         eta *= 2.0;
     }
 
-    // --- Saved initialization for Newton solve
+    // --- Tsallis-INF update
     scalar x = learningDict.getOrAdd<scalar>("x", -1.0);
-
-    // --- Newton solve
-    scalar update;
-    label j;
-    for (j = 0; j < maxNewtonIter; j++) {
-        probs = 2.0  / (eta * (lhat - x));
-        probs *= probs;
-        update = (sum(probs) - 1.0) / (eta * sum(pow(probs, 1.5)));
-        x -= update;
-        if (mag(update) < tolerance) {
-            break;
-        }
-    }
-
-    if (j == maxNewtonIter) {
-        Info<< "Newton solver did not converge: " << update << endl;
-    }
-    learningDict.set<scalar>("x", x);
+    learningDict.set<scalar>("x", tsallisINF(lhat, eta, probs, x));
 
 }
 

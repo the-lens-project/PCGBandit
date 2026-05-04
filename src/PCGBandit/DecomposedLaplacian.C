@@ -215,7 +215,23 @@ LLTMatrix<scalar> Foam::DecomposedLaplacian::cholLaplacianPlusPi(
     return LLTMatrix<scalar>(RegPi);
 }
 
-Pair<scalarField> Foam::DecomposedLaplacian::HatAndBonus(
+scalarField Foam::DecomposedLaplacian::getHat(
+    const scalarField& Pi,
+    const scalar mu,
+    const label row
+) const
+{
+
+    LLTMatrix<scalar> chol = cholLaplacianPlusPi(Pi, mu);
+    scalarField hat(d_);
+    scalarField e(d_, 0.0);
+    e[row] = 1.0;
+    chol.solve(hat, e);
+    return hat;
+    
+}
+
+Pair<scalarField> Foam::DecomposedLaplacian::getHatAndBonus(
     const scalarField& Pi,
     const scalar mu,
     const label row

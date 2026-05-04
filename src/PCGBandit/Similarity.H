@@ -1,22 +1,25 @@
 /*---------------------------------------------------------------------------*\
-Function
-    Foam::preconditionerSimilarityMatrix
-
-Description
-    Build the similarity matrix over all preconditioner configurations.
+        Functions to build matrices of preconditioner similarities.
 \*---------------------------------------------------------------------------*/
 
-#ifndef similarityMatrix_H
-#define similarityMatrix_H
-
+#ifndef Similarity_H
+#define Similarity_H
 #include "SquareMatrix.H"
 
 namespace Foam
 {
 
-SquareMatrix<scalar> preconditionerSimilarityMatrix
-(
+SquareMatrix<scalar> similarityMatrix(
     const List<dictionary>& preconditionerDicts
+);
+
+SquareMatrix<scalar> pathMatrix(
+    const List<dictionary>& preconditionerDicts
+);
+
+void elementwisePower(
+    SquareMatrix<scalar>& S, 
+    const scalar power
 );
 
 } // End namespace Foam

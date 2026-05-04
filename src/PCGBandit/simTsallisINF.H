@@ -1,10 +1,7 @@
-label maxNewtonIter = 100;
-scalar tolerance = 1e-8;
-
 scalarField probs(d);
 scalar t = learningDict.getOrAdd("t", 0.0);
 
-SquareMatrix<scalar> similarityMatrix;
+SquareMatrix<scalar> S;
 scalarField columnSums;
 
 if (t == 0.0) {
@@ -20,15 +17,15 @@ if (t == 0.0) {
     }
 
     // Constructs the matrix
-    similarityMatrix = preconditionerSimilarityMatrix(preconditionerDictsMap[banditName_]);
-    learningDict.set("similarityMatrix", similarityMatrix);
+    S = similarityMatrix(preconditionerDictsMap[banditName_]);
+    learningDict.set("similarityMatrix", S);
 
     // Finds the sum of each column of the similarity matrix (to be used for RV estimator)
     if (lossEstimator_ == "RV") {
 	    columnSums.setSize(d, 0.0);
     	for (label i = 0; i < d; i++) {
             for (label j = 0; j < d; j++) {
-                    columnSums[j] += similarityMatrix(i, j);
+                    columnSums[j] += S(i, j);
             }
         }
         learningDict.set("columnSums", columnSums);
@@ -36,7 +33,7 @@ if (t == 0.0) {
 
 } else {
 
-    similarityMatrix = learningDict.get<SquareMatrix<scalar>>("similarityMatrix");
+    S = learningDict.get<SquareMatrix<scalar>>("similarityMatrix");
 
     // --- Process solver feedback
     scalarField IW = learningDict.get<scalarField>("IW");
@@ -44,8 +41,7 @@ if (t == 0.0) {
     scalar loss = learningDict.getOrAdd<scalar>("loss", 0.0);
     
     if (loss > 0.0) {
-
-	    IW += (loss / learningDict.get<scalar>("p")) * scalarField(similarityMatrix.subColumn(learningDict.get<label>("i")));
+	    IW += (loss / learningDict.get<scalar>("p")) * scalarField(S.subColumn(learningDict.get<label>("i")));
         learningDict.set<scalarField>("IW", IW);
         scale = (scale * (t - 1.0) + loss) / t;
         learningDict.set<scalar>("scale", scale);
@@ -61,31 +57,9 @@ if (t == 0.0) {
         eta *= 2.0;
     }
 
-    // --- Saved initialization for Newton solve
+    // --- Tsallis-INF update
     scalar x = learningDict.getOrAdd<scalar>("x", -1.0);
-
-    // --- Newton solve
-    scalar update;
-    label j;
-    for (j = 0; j < maxNewtonIter; j++) {
-        probs = 2.0  / (eta * (lhat - x));
-        probs *= probs;
-        update = (sum(probs) - 1.0) / (eta * sum(pow(probs, 1.5)));
-        x -= update;
-
-        if (mag(update) < tolerance) {
-            break;
-        }
-
-	if (x >= min(lhat)) {
-        	x = min(lhat) - 1.0;
-    	}
-    }
-
-    if (j == maxNewtonIter) {
-        Info<< "Newton solver did not converge: " << update << endl;
-    }
-    learningDict.set<scalar>("x", x);
+    learningDict.set<scalar>("x", tsallisINF(lhat, eta, probs, x));
 
 }
 
@@ -110,7 +84,7 @@ if (lossEstimator_ == "RV" && t >= 16.0) {
     
     scalarField shift = learningDict.get<scalarField>("shift");
     columnSums = learningDict.get<scalarField>("columnSums");
-    scalarField lossFactor = similarityMatrix.subColumn(i);
+    scalarField lossFactor = S.subColumn(i);
 
     for (label j = 0; j < d; j++) {
 

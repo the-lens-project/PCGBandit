@@ -13,8 +13,9 @@ SourceFiles
 #ifndef PCGBandit_H
 #define PCGBandit_H
 #include "lduMatrix.H"
-#include "similarityMatrix.H"
 #include "DecomposedLaplacian.H"
+#include "MirrorDescent.H"
+#include "Similarity.H"
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 namespace Foam
 {
