@@ -23,15 +23,20 @@ if (t == 0.0) {
     const DecomposedLaplacian& Lap = *nonSerializableObjects_[banditName_];
     scalar dEff = Lap.dEff(mu);
     learningDict.set<scalar>("dEff", dEff);
-    probs = Lap.DOptimalDesign(mu);
+    if (gammaMax == 0.0) {
+        probs = 1.0 / d;
+    } else {
+        probs = Lap.DOptimalDesign(mu);
+    }
     learningDict.set<scalarField>("Pi", probs);
     learningDict.set<scalarField>("F", scalarField(d, 0.0));
     if (useBonus) {
         learningDict.set<scalarField>("B", scalarField(d, 0.0));
     }
 
-    Info<< "Pi: " << probs << endl;
+    #ifdef PCGB_DEBUG
     Info<< "dEff: " << dEff << endl;
+    #endif
 
 } else {
 

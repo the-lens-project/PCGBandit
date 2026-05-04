@@ -123,8 +123,8 @@ scalarField Foam::DecomposedLaplacian::DOptimalDesign(
 ) const
 {
 
-    const scalar maxFWIter = 1000;
-    const scalar tolerance = 1e-6;
+    const scalar maxFWIter = 100;
+    const scalar tolerance = 1e-2;
     const word dEffinition = "tight";   // "tight" or "dEff"
     const word criterion = "duality";   // "duality" or "KW"
     const word stepSize = "optimal";    // "optimal" or "FW"
