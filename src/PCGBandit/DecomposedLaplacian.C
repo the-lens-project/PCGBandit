@@ -94,7 +94,7 @@ LLTMatrix<scalar> Foam::DecomposedLaplacian::cholLambdaPlusVPi(
 
     SquareMatrix<scalar> RegVPi(d_, 0.0);
     for (label i = 0; i < d_; ++i) {
-        RegVPi[i][i] = mu * Lambda_[i];
+        RegVPi[i][i] = mu * Lambda_[i] + SMALL;
     }
 
     for (label k = 0; k < d_; ++k) {
@@ -210,7 +210,7 @@ LLTMatrix<scalar> Foam::DecomposedLaplacian::cholLaplacianPlusPi(
 {
     SquareMatrix<scalar> RegPi = mu * Laplacian_;
     for (label i = 0; i < d_; ++i) {
-        RegPi[i][i] += Pi[i];
+        RegPi[i][i] += Pi[i] + SMALL;
     }
     return LLTMatrix<scalar>(RegPi);
 }

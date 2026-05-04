@@ -1,9 +1,9 @@
 const scalar mu = controlDict_.getOrDefault<scalar>("mu", 1.0);
 const scalar power = controlDict_.getOrDefault<scalar>("power", 1.0);
-const bool pathSimilarity = Switch(controlDict_.getOrDefault<word>("pathSimilarity", "no"));
+const bool pathSimilarity = Switch(controlDict_.getOrDefault<word>("pathSimilarity", "yes"));
 const bool useTsallis = Switch(controlDict_.getOrDefault<word>("useTsallis", "no"));
-const bool useBonus = Switch(controlDict_.getOrDefault<word>("useBonus", "yes"));
-const scalar gammaMax = controlDict_.getOrDefault<scalar>("gammaMax", 1.0);
+const bool useBonus = Switch(controlDict_.getOrDefault<word>("useBonus", "no"));
+const scalar gammaMax = controlDict_.getOrDefault<scalar>("gammaMax", 0.0);
 
 scalarField probs(d);
 scalar t = learningDict.getOrAdd("t", 0.0);
