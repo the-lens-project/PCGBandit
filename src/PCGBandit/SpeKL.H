@@ -4,7 +4,7 @@ const bool pathSimilarity = Switch(controlDict_.getOrDefault<word>("pathSimilari
 const bool useTsallis = Switch(controlDict_.getOrDefault<word>("useTsallis", "no"));
 const bool useBonus = Switch(controlDict_.getOrDefault<word>("useBonus", "no"));
 const scalar gammaMax = controlDict_.getOrDefault<scalar>("gammaMax", 0.0);
-const bool ogTsallis = Switch(controlDict_.getOrDefault<word>("useTsallis", "no"));
+const bool ogTsallis = Switch(controlDict_.getOrDefault<word>("ogTsallis", "no"));
 
 scalarField probs(d);
 scalar t = learningDict.getOrAdd("t", 0.0);
