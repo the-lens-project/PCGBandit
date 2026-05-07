@@ -270,14 +270,14 @@ SquareMatrix<scalar> pathMatrix(
                 if (dict_i.getOrDefault<label>("mergeLevels", 1) != dict_j.getOrDefault<label>("mergeLevels", 1)) {
                     diff++;
                 }
-                if (diff < maxDiff) {
+                if (diff <= maxDiff) {
                     adjacent = 1.0 / max(1.0, scalar(diff));
                 }
             } else if (iIC && jIC) {
                 label iD = droptolRanks.get<label>(name(dict_i.getOrDefault<scalar>("droptol", 1.0)));
                 label jD = droptolRanks.get<label>(name(dict_j.getOrDefault<scalar>("droptol", 1.0)));
                 diff += mag(iD - jD);
-                if (diff < maxDiff) {
+                if (diff <= maxDiff) {
                     adjacent = 1.0 / max(1.0, scalar(diff));
                 }
             }
