@@ -14,6 +14,10 @@ SquareMatrix<scalar> similarityMatrix(
 );
 
 SquareMatrix<scalar> pathMatrix(
+    const List<dictionary>& preconditionerDicts,
+    const label maxDiff
+);
+SquareMatrix<scalar> pathMatrix(
     const List<dictionary>& preconditionerDicts
 );
 

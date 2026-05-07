@@ -193,7 +193,8 @@ static dictionary rankDict(DynamicList<T>& values) {
 // S[i][j] is the similarity between arm i and arm j, in {0, 1}.
 // Cross-type similarity (IC vs GAMG) is always 0.
 SquareMatrix<scalar> pathMatrix(
-    const List<dictionary>& preconditionerDicts
+    const List<dictionary>& preconditionerDicts,
+    const label maxDiff
 ) {
 
     label numConfigs = preconditionerDicts.size();
@@ -269,15 +270,15 @@ SquareMatrix<scalar> pathMatrix(
                 if (dict_i.getOrDefault<label>("mergeLevels", 1) != dict_j.getOrDefault<label>("mergeLevels", 1)) {
                     diff++;
                 }
-                if (diff < 2) {
-                    adjacent = 1.0;
+                if (diff < maxDiff) {
+                    adjacent = 1.0 / max(1.0, scalar(diff));
                 }
             } else if (iIC && jIC) {
                 label iD = droptolRanks.get<label>(name(dict_i.getOrDefault<scalar>("droptol", 1.0)));
                 label jD = droptolRanks.get<label>(name(dict_j.getOrDefault<scalar>("droptol", 1.0)));
                 diff += mag(iD - jD);
-                if (diff < 2) {
-                    adjacent = 1.0;
+                if (diff < maxDiff) {
+                    adjacent = 1.0 / max(1.0, scalar(diff));
                 }
             }
 
@@ -291,6 +292,11 @@ SquareMatrix<scalar> pathMatrix(
 
 }
 
+SquareMatrix<scalar> pathMatrix(
+    const List<dictionary>& preconditionerDicts
+) {
+    return pathMatrix(preconditionerDicts, 1);
+}
 
 void elementwisePower(
     SquareMatrix<scalar>& S, 

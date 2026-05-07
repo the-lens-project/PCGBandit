@@ -5,6 +5,7 @@ const bool useTsallis = Switch(controlDict_.getOrDefault<word>("useTsallis", "no
 const bool useBonus = Switch(controlDict_.getOrDefault<word>("useBonus", "no"));
 const scalar gammaMax = controlDict_.getOrDefault<scalar>("gammaMax", 0.0);
 const bool ogTsallis = Switch(controlDict_.getOrDefault<word>("ogTsallis", "no"));
+const label maxDiff = controlDict_.getOrDefault<label>("maxDiff", 1);
 
 scalarField probs(d);
 scalar t = learningDict.getOrAdd("t", 0.0);
@@ -15,7 +16,7 @@ if (t == 0.0) {
     learningDict.set<scalar>("t", t);
     SquareMatrix<scalar> S;
     if (pathSimilarity) {
-        S = pathMatrix(preconditionerDictsMap[banditName_]);
+        S = pathMatrix(preconditionerDictsMap[banditName_], maxDiff);
     } else {
         S = similarityMatrix(preconditionerDictsMap[banditName_]);
         elementwisePower(S, power);
