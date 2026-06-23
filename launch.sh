@@ -19,6 +19,8 @@ cd /home/openfoam/src/PCGBandit
 wmake libso
 cd ../ICTC
 wmake libso
+cd ../FGAMG
+wmake libso
 cd /home/openfoam
 
 exec /bin/bash
