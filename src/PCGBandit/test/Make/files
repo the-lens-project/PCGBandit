@@ -1,0 +1,3 @@
+spectral.C
+
+EXE = $(PWD)/spectral

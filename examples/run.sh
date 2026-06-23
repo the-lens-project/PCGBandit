@@ -1,31 +1,23 @@
-#!/bin/bash
-#SBATCH --job-name=pitzDaily
-#SBATCH --array=[0-2]
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1
-#SBATCH --time=24:00:00
-#SBATCH --mem-per-cpu=1G
-#SBATCH --nodelist=della-r3c[1-4]n[1-16]
-#SBATCH --nodes=1
+#!/bin/sh
 
-NAME=$SLURM_JOB_NAME
-NPROC=$SLURM_NTASKS
-SEED=$SLURM_ARRAY_TASK_ID
-if [ -z $NAME ] ; then
-  NAME=$1
-  if [ -z $NAME ] ; then
-    NAME=pitzDaily
-  fi
-  NPROC=$2
-  if [ -z $NPROC ] ; then
-    NPROC=1  
-  fi
-  SEED=0
-  DEBUG=True
+DEFAULT="solver PCGBandit; preconditioner separate; backstop 10000;"
+
+NAME=${1:-pitzDaily}
+SEED=0
+if [ $NAME = "closedPipe" ] || [ $NAME = "fringingBField" ] ; then
+  echo "running FreeMHD simulation; assuming examples/FreeMHD.zip has been unzipped"
+  NPROC=16
+  cd FreeMHD && wmake solvers/epotMultiRegionInterFoam && cd ..
+else
+  NPROC=1
 fi
-rm -rf $NAME/$NPROC/$SEED
-mkdir -p $NAME/$NPROC/$SEED
-cd $NAME/$NPROC/$SEED
+if [ "$2" = "debug" ] ; then
+  DEBUG="true"
+  DEFAULT="$DEFAULT deterministic yes;"
+fi
+
+mkdir -p $NAME
+cd $NAME
 
 if [ -z $FOAM ] ; then
   echo "OpenFOAM directory not found; assuming script is executing inside a container started by launch.sh"
@@ -61,22 +53,16 @@ dumpSave() {
     -exec rm -rf {} + 2>/dev/null
 }
 
-DEFAULT='solver PCGBandit; preconditioner separate; smootherTune yes; nCellsInCoarsestLevelTune yes; mergeLevelsTune yes; numDroptols 8; static 8;'
-
 ################################################################################
 ##################################   cases   ###################################
 ################################################################################
 
 if [ $NAME == "boxTurb32" ] ; then
 
-  if [ ! $DUMP ] ; then
-    SWEEP=True
-  fi
-
   cp -r $FOAM_TUTORIALS/DNS/dnsFoam/boxTurb16 boxTurb32
   cd boxTurb32
 
-  sed -i '16a\libs ( libICTCPreconditioner.so libPCGBandit.so );\
+  sed -i '16a\libs ( libICTC.so libFGAMG.so libPCGBandit.so );\
   ' system/controlDict
   sed -i '18a\randomSeed\t\t\t'"$SEED"';\
   ' system/controlDict
@@ -84,7 +70,7 @@ if [ $NAME == "boxTurb32" ] ; then
     sed -i 's/writeInterval   0\.25/writeInterval   100/' system/controlDict
   fi
   if [ $DEBUG ] ; then
-    sed -i 's/endTime         10/endTime         0.01/' system/controlDict
+    sed -i 's/endTime         10/endTime         0.1/' system/controlDict
   fi
 
   sed -i 's/16/32/g' system/blockMeshDict
@@ -117,14 +103,10 @@ fi
 
 if [ $NAME == "pitzDaily" ] ; then
 
-  if [ ! DUMP ] ; then
-    SWEEP=True
-  fi
-
   cp -r $FOAM_TUTORIALS/incompressible/pimpleFoam/RAS/pitzDaily .
   cd pitzDaily
 
-  sed -i '16a\libs ( libICTCPreconditioner.so libPCGBandit.so );\
+  sed -i '16a\libs ( libICTC.so libFGAMG.so libPCGBandit.so );\
   ' system/controlDict
   sed -i '18a\randomSeed\t\t\t'"$SEED"';\
   ' system/controlDict
@@ -177,7 +159,7 @@ if [ $NAME == "interStefanProblem" ] ; then
     cp -r $FOAM_TUTORIALS/verificationAndValidation/multiphase/StefanProblem/setups.orig/interCondensatingEvaporatingFoam/$SUBFOLDER/* $SUBFOLDER/.
   done
 
-  sed -i '17a\libs ( libICTCPreconditioner.so libPCGBandit.so );\
+  sed -i '17a\libs ( libICTC.so libFGAMG.so libPCGBandit.so );\
   ' system/controlDict
   sed -i '19a\randomSeed\t\t\t'"$SEED"';\
   ' system/controlDict
@@ -205,17 +187,7 @@ if [ $NAME == "interStefanProblem" ] ; then
     checkMesh > log.checkMesh
     setAlphaField > log.setAlphaField
     echo $2 $1
-    if (( $NPROC > 1 )) ; then
-      sed -i 's/numberOfSubdomains.*;/numberOfSubdomains '"$NPROC"';/' system/decomposeParDict
-      decomposePar > log.decomposePar
-      if [ $DEBUG ] || [ -z $FOAM ] ; then
-        mpirun -n $NPROC interCondensatingEvaporatingFoam -parallel > log.interCondensatingEvaporatingFoam
-      else
-        srun -n $NPROC interCondensatingEvaporatingFoam -parallel > log.interCondensatingEvaporatingFoam
-      fi
-    else
-      interCondensatingEvaporatingFoam > log.interCondensatingEvaporatingFoam
-    fi
+    interCondensatingEvaporatingFoam > log.interCondensatingEvaporatingFoam
     if [ $DUMP ] ; then 
       dumpSave $2
     else 
@@ -231,14 +203,10 @@ fi
 
 if [ $NAME == "porousDamBreak" ] ; then
 
-  if [ $NPROC -ge 16 ] && [ ! $DUMP ] ; then
-    SWEEP=True
-  fi
-
   cp -r $FOAM_TUTORIALS/verificationAndValidation/multiphase/interIsoFoam/porousDamBreak porousDamBreak
   cd porousDamBreak
 
-  sed -i '16a\libs ( libICTCPreconditioner.so libPCGBandit.so );\
+  sed -i '16a\libs ( libICTC.so libFGAMG.so libPCGBandit.so );\
   ' system/controlDict
   sed -i '18a\randomSeed\t\t\t'"$SEED"';\
   ' system/controlDict
@@ -265,23 +233,7 @@ if [ $NAME == "porousDamBreak" ] ; then
     blockMesh > log.blockMesh
     setFields > log.setFields
     echo $2 $1
-    if (( $NPROC > 1 )) ; then
-      sed -i 's/numberOfSubdomains.*;/numberOfSubdomains '"$NPROC"';/' system/decomposeParDict
-      for n in $(seq 0 $NPROC) ; do
-        if (( $((n * n)) == $NPROC )) ; then
-          sed -i 's/n *(.*1);/n ('"$n"' '"$n"' 1);/' system/decomposeParDict
-          break
-        fi
-      done
-      decomposePar > log.decomposePar
-      if [ $DEBUG ] || [ -z $FOAM ] ; then
-        mpirun -n $NPROC interIsoFoam -parallel > log.interIsoFoam
-      else
-        srun -n $NPROC interIsoFoam -parallel > log.interIsoFoam
-      fi
-    else
-      interIsoFoam > log.interIsoFoam
-    fi
+    interIsoFoam > log.interIsoFoam
     if [ $DUMP ] ; then 
       dumpSave $2
     else 
@@ -297,14 +249,11 @@ fi
 
 if [ $NAME == "closedPipe" ] ; then
 
-  echo "running FreeMHD simulation; assuming examples/FreeMHD.zip has been unzipped"
-  wmake ../../../FreeMHD/solvers/epotMultiRegionInterFoam
-
-  cp -r ../../../FreeMHD/closedPipe .
+  cp -r ../FreeMHD/closedPipe .
   cd closedPipe
   wmake libso dynamicCode/outletUxB
 
-  sed -i '19a\libs ( libICTCPreconditioner.so libPCGBandit.so );\
+  sed -i '19a\libs ( libICTC.so libFGAMG.so libPCGBandit.so );\
   ' system/controlDict
   sed -i '21a\randomSeed\t\t\t'"$SEED"';\
   ' system/controlDict
@@ -334,19 +283,15 @@ if [ $NAME == "closedPipe" ] ; then
     done
 
     echo $2 $1
-    if (( $NPROC > 1 )) ; then
-      sed -i 's/numberOfSubdomains.*;/numberOfSubdomains '"$NPROC"';/' system/decomposeParDict
-      for region in $(foamListRegions) ; do
-        sed -i 's/numberOfSubdomains.*;/numberOfSubdomains '"$NPROC"';/' system/$region/decomposeParDict
-      done
-      decomposePar -allRegions -force -fileHandler collated > log.decomposePar
-      if [ $DEBUG ] || [ -z $FOAM ] ; then
-        mpirun -n $NPROC epotMultiRegionInterFoam -parallel > log.epotMultiRegionInterFoam
-      else
-        srun -n $NPROC epotMultiRegionInterFoam -parallel > log.epotMultiRegionInterFoam
-      fi
+    sed -i 's/numberOfSubdomains.*;/numberOfSubdomains '"$NPROC"';/' system/decomposeParDict
+    for region in $(foamListRegions) ; do
+      sed -i 's/numberOfSubdomains.*;/numberOfSubdomains '"$NPROC"';/' system/$region/decomposeParDict
+    done
+    decomposePar -allRegions -force -fileHandler collated > log.decomposePar
+    if [ $DEBUG ] || [ -z $FOAM ] ; then
+      mpirun -n $NPROC epotMultiRegionInterFoam -parallel > log.epotMultiRegionInterFoam
     else
-      epotMultiRegionInterFoam > log.epotMultiRegionInterFoam
+      srun -n $NPROC epotMultiRegionInterFoam -parallel > log.epotMultiRegionInterFoam
     fi
     if [ $DUMP ] ; then
       dumpSave $2
@@ -366,14 +311,11 @@ fi
 
 if [ $NAME == 'fringingBField' ] ; then
 
-  echo "running FreeMHD simulation; assuming examples/FreeMHD.zip has been unzipped"
-  wmake ../../../FreeMHD/solvers/epotMultiRegionInterFoam
-
-  cp -r ../../../FreeMHD/fringingBField .
+  cp -r ../FreeMHD/fringingBField .
   cd fringingBField
   wmake libso dynamicCode/outletUxB
   
-  sed -i '19a\libs ( libICTCPreconditioner.so libPCGBandit.so );\
+  sed -i '19a\libs ( libICTC.so libFGAMG.so libPCGBandit.so );\
   ' system/controlDict
   sed -i '21a\randomSeed\t\t\t'"$SEED"';\
   ' system/controlDict
@@ -402,19 +344,15 @@ if [ $NAME == 'fringingBField' ] ; then
     done
 
     echo $2 $1
-    if (( $NPROC > 1 )) ; then
-      sed -i 's/numberOfSubdomains.*;/numberOfSubdomains '"$NPROC"';/' system/decomposeParDict
-      for region in $(foamListRegions) ; do
-        sed -i 's/numberOfSubdomains.*;/numberOfSubdomains '"$NPROC"';/' system/$region/decomposeParDict
-      done
-      decomposePar -allRegions -force -fileHandler collated > log.decomposePar
-      if [ $DEBUG ] || [ -z $FOAM ] ; then
-        mpirun -n $NPROC epotMultiRegionInterFoam -parallel > log.epotMultiRegionInterFoam
-      else
-        srun -n $NPROC epotMultiRegionInterFoam -parallel > log.epotMultiRegionInterFoam
-      fi
+    sed -i 's/numberOfSubdomains.*;/numberOfSubdomains '"$NPROC"';/' system/decomposeParDict
+    for region in $(foamListRegions) ; do
+      sed -i 's/numberOfSubdomains.*;/numberOfSubdomains '"$NPROC"';/' system/$region/decomposeParDict
+    done
+    decomposePar -allRegions -force -fileHandler collated > log.decomposePar
+    if [ $DEBUG ] || [ -z $FOAM ] ; then
+      mpirun -n $NPROC epotMultiRegionInterFoam -parallel > log.epotMultiRegionInterFoam
     else
-      epotMultiRegionInterFoam > log.epotMultiRegionInterFoam
+      srun -n $NPROC epotMultiRegionInterFoam -parallel > log.epotMultiRegionInterFoam
     fi
     if [ $DUMP ] ; then
       dumpSave $2
@@ -441,22 +379,17 @@ fi
 ###################################   runs   ###################################
 ################################################################################
 
-if [ $SWEEP ] ; then
-  STATIC=`seq 0 32`   # try all configurations
-else
-  STATIC='8 21'       # try DIC & GAMG(DIC+GS)
-fi
-
-for S in $STATIC ; do
-  LOGFILE=../staticPCG_"$S"
-  SOLVER='solver PCGBandit; preconditioner separate; smootherTune yes; nCellsInCoarsestLevelTune yes; mergeLevelsTune yes; numDroptols 8; static '"$S"'; backstop 10000; cacheAgglomeration no;'
-  runSimulation "$SOLVER" $LOGFILE
-done
-
-################################################################################
-
-SOLVER='solver PCGBandit; preconditioner separate; smootherTune yes; nCellsInCoarsestLevelTune yes; mergeLevelsTune yes; numDroptols 8; backstop 10000; cacheAgglomeration no;'
+# PCGBandit
+SOLVER="$DEFAULT smootherTune yes; nCellsInCoarsestLevelTune yes; mergeLevelsTune yes; numDroptols 8;"
 runSimulation "$SOLVER" ../PCGBandit
+
+# DIC
+SOLVER=$DEFAULT
+runSimulation "$SOLVER" ../DIC
+
+# GAMG with DICGaussSeidel smoother
+SOLVER="$DEFAULT smootherTune (DICGaussSeidel); DICTune no;"
+runSimulation "$SOLVER" ../GAMG
 
 ################################################################################
 

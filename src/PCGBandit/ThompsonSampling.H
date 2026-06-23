@@ -39,8 +39,8 @@ if (t == 0.0) {
 }
 
 #ifdef PCGB_DEBUG
-Info<< "\tmu: " << mu << endl;
-Info<< "\tsigma: " << sigma << endl;
+Info<< "ThompsonSampling mu: " << mu << endl;
+Info<< "ThompsonSampling sigma: " << sigma << endl;
 #endif
 
 i = 0;
