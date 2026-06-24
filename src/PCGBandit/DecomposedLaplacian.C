@@ -27,7 +27,7 @@ DecomposedLaplacian::DecomposedLaplacian(const SquareMatrix<scalar>& similarityM
     }
 
     // Create a symmetric EigenMatrix object to decompose L
-    EigenMatrix em(Laplacian_, true);
+    EigenMatrix<scalar> em(Laplacian_, true);
 
     // Extract eigenvalues
     Lambda_ = em.EValsRe();

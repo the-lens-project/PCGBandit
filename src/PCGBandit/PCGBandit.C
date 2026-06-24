@@ -53,12 +53,8 @@ namespace Foam
     const List<word> ICTCSuffixes = {"m4", "m3p5", "m3", "m2p5", "m2", "m1p5", "m1", "m0p5"};
     const HashSet<word> noCacheAgglomeration = {"agglomerator", "nCellsInCoarsestLevel", "mergeLevels"};
 
-    #ifdef PCGB_DEBUG
-    #include "initializeTracking.H"
-    #endif
-
     #ifdef DUMP_ABSOL
-    #include "initializeDumping.H"
+    #include "Absol/initializeDumping.H"
     #endif
 
     HashPtrTable<DecomposedLaplacian> nonSerializableObjects_;
@@ -434,11 +430,7 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
 {
 
     #ifdef DUMP_ABSOL
-    #include "startDump.H"
-    #endif
-
-    #ifdef PCGB_DEBUG
-    #include "printTracking.H"
+    #include "Absol/startDump.H"
     #endif
 
     // --- Setup class containing solver performance data
@@ -667,7 +659,7 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
     Info<< endl;
 
     #ifdef DUMP_ABSOL
-    #include "finishDump.H"
+    #include "Absol/finishDump.H"
     #endif
 
     return solverPerf;

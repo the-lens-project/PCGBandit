@@ -30,7 +30,7 @@ fi
 # (matrices, RHS, solutions) of every solve into the directory passed as the
 # second argument to runSimulation. Requires "#define DUMP_ABSOL" in
 # src/PCGBandit/PCGBandit.C. Leave empty for normal benchmarking.
-DUMP=True
+#DUMP=True
 
 # Save the solver logs, every <field>-Absol dump tree, and the parallel
 # cell/face/point/boundary processor addressing (needed to map the decomposed
@@ -111,7 +111,8 @@ if [ $NAME == "pitzDaily" ] ; then
   sed -i '18a\randomSeed\t\t\t'"$SEED"';\
   ' system/controlDict
   if [ $DUMP ] ; then
-    sed -i 's/writeInterval   0\.01/writeInterval   0.005/' system/controlDict
+    sed -i 's/writeControl    adjustable/writeInterval    timeStep/' system/controlDict
+    sed -i 's/writeInterval   0\.01/writeInterval   1/' system/controlDict
   else
     sed -i 's/writeInterval   0\.01/writeInterval   1/' system/controlDict
   fi
@@ -210,7 +211,10 @@ if [ $NAME == "porousDamBreak" ] ; then
   ' system/controlDict
   sed -i '18a\randomSeed\t\t\t'"$SEED"';\
   ' system/controlDict
-  if [ ! $DUMP ] ; then
+  if [ $DUMP ] ; then
+    sed -i 's/writeControl    adjustable/writeInterval    timeStep/' system/controlDict
+    sed -i 's/writeInterval   0\.05/writeInterval   1/' system/controlDict
+  else
     sed -i 's/writeInterval   0\.05/writeInterval   10/' system/controlDict
   fi
   if [ $DEBUG ] ; then
@@ -258,7 +262,8 @@ if [ $NAME == "closedPipe" ] ; then
   sed -i '21a\randomSeed\t\t\t'"$SEED"';\
   ' system/controlDict
   if [ $DUMP ] ; then
-    sed -i 's/writeInterval   1e-5/writeInterval   5e-4/' system/controlDict
+    sed -i 's/writeControl    adjustable/writeInterval    timeStep/' system/controlDict
+    sed -i 's/writeInterval   1e-5/writeInterval   1/' system/controlDict
   else
     sed -i 's/writeInterval   1e-5/writeInterval   1e-1/' system/controlDict
   fi
@@ -379,17 +384,25 @@ fi
 ###################################   runs   ###################################
 ################################################################################
 
-# PCGBandit
-SOLVER="$DEFAULT smootherTune yes; nCellsInCoarsestLevelTune yes; mergeLevelsTune yes; numDroptols 8;"
-runSimulation "$SOLVER" ../PCGBandit
+if [ ! $DUMP ] ; then
+
+  # PCGBandit
+  SOLVER="$DEFAULT smootherTune yes; nCellsInCoarsestLevelTune yes; mergeLevelsTune yes; numDroptols 8;"
+  runSimulation "$SOLVER" ../PCGBandit
+
+fi
 
 # DIC
 SOLVER=$DEFAULT
 runSimulation "$SOLVER" ../DIC
 
-# GAMG with DICGaussSeidel smoother
-SOLVER="$DEFAULT smootherTune (DICGaussSeidel); DICTune no;"
-runSimulation "$SOLVER" ../GAMG
+if [ ! $DUMP ] ; then
+
+  # GAMG with DICGaussSeidel smoother
+  SOLVER="$DEFAULT smootherTune (DICGaussSeidel); DICTune no;"
+  runSimulation "$SOLVER" ../GAMG
+
+fi
 
 ################################################################################
 
