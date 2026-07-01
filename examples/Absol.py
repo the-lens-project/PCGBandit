@@ -1,11 +1,20 @@
+import json
 import os
 import re
 import sys
 from collections import defaultdict
 from glob import glob
+import h5py
 import numpy as np
-from scipy import io as sio
-from scipy import sparse as sp
+
+# scipy < 1.8 has no sparse *_array classes, so fall back to the *_matrix
+# equivalents to run on the testing interpreter (scipy 1.7.x). Only the shared
+# interface is used here -- the 3-tuple/(data,(row,col)) constructors, tocsr,
+# tocoo, .data/.row/.col, transpose and @ -- so the two are interchangeable.
+try:
+    from scipy.sparse import csr_array, coo_array
+except ImportError:  # scipy < 1.8
+    from scipy.sparse import csr_matrix as csr_array, coo_matrix as coo_array
 
 
 # Quantities stored as integer cell indices (labels).
@@ -161,11 +170,11 @@ def build_orig(specs, region, sizes, offs, nGlobal):
 def desymmetrize(A):
     """Halve the off-diagonal storage of a symmetric matrix: keep the diagonal
     and the doubled strict-upper triangle, so the true matrix is recovered as
-    0.5*(A + A.T). This is the form written to the .mat files."""
+    0.5*(A + A.T). This is the form written to the HDF5 matrix datasets."""
     M = A.tocoo()
     dm = M.row == M.col
     um = M.row < M.col
-    return sp.coo_array(
+    return coo_array(
         (np.concatenate([M.data[dm], 2.0 * M.data[um]]),
          (np.concatenate([M.row[dm], M.row[um]]),
           np.concatenate([M.col[dm], M.col[um]]))),
@@ -177,9 +186,7 @@ class LinearSystem:
     """One assembled global linear system A x = b. `A` is the symmetric matrix
     (CSR, the true matrix -- not the de-symmetrized storage form); `b`, `sol` and
     `init` are the right-hand side, dumped solution and initial guess; `info` is
-    the solver info dict. For a decomposed run the per-processor pieces are
-    stitched into a single monolithic system in the original (undecomposed) cell
-    ordering, so it matches a serial run element-wise."""
+    the solver info dict."""
 
     __slots__ = ('field', 'timestep', 'solve', 'A', 'b', 'sol', 'init', 'info')
 
@@ -199,7 +206,14 @@ class LinearSystem:
 class LinearSystems:
     """Iterate the linear systems dumped under a case directory, assembling each
     into a monolithic global LinearSystem. Iteration reads from disk but writes
-    nothing (use desymmetrize + scipy.io.savemat to persist a system).
+    nothing (run this module's __main__ to persist a whole case to one HDF5 file).
+
+    `folder` is either a case directory (a dump tree) or a single HDF5 file
+    written by __main__; the two iterate identically. The HDF5 file holds the
+    already-assembled systems with the same carry-forward the tree uses (the
+    constant matrix structure stored once, the values only when they change, the
+    RHS/solution/initial-guess every solve), and only one system -- at most one
+    matrix plus one solve's vectors -- is read into memory at a time.
 
     By default systems are yielded in the order they were solved: by timestep,
     then by the per-field dump counter. `fields` restricts to the named field(s)
@@ -221,10 +235,30 @@ class LinearSystems:
         if not corrector is None and not isinstance(corrector, int):
             raise ValueError("corrector must be None or an int index (e.g. 0 or -1)")
         self.corrector = corrector
-        self.specs = subdomains(self.folder)
-        self.maps = {}
-        for root, _ in self.specs:
-            self.maps.setdefault(root, discover(root))
+        self.h5path = None
+        if os.path.isfile(self.folder) and h5py.is_hdf5(self.folder):
+            self._init_h5()
+        else:
+            self.specs = subdomains(self.folder)
+            self.maps = {}
+            for root, _ in self.specs:
+                self.maps.setdefault(root, discover(root))
+
+    def _init_h5(self):
+        """Read the per-solve index of an HDF5 dump into memory: the
+        (field, timestep, solve) key of each stored system and the ids of its
+        carried-forward matrix structure and values. Only this small metadata is
+        loaded here; the vectors and matrix arrays are read during iteration."""
+        self.h5path = self.folder
+        self._h5_index = {}
+        with h5py.File(self.h5path, 'r') as f:
+            for name, grp in f['systems'].items():
+                key = (str(grp.attrs['field']),
+                       float(grp.attrs['timestep']),
+                       int(grp.attrs['solve']))
+                self._h5_index[key] = (name,
+                                       int(grp.attrs['struct']),
+                                       int(grp.attrs['data']))
 
     def _ordered_keys(self):
         """Every dumped solve key in solve order (by timestep, then per-field dump
@@ -232,7 +266,10 @@ class LinearSystems:
         carry-forward sequence; corrector selection and completeness are applied
         later in _walk, because a skipped solve still advances the deduplication
         carry-forward and so must stay in the sequence."""
-        keys = set().union(*(set(self.maps[r]) for r, _ in self.specs))
+        if self.h5path is not None:
+            keys = set(self._h5_index)
+        else:
+            keys = set().union(*(set(self.maps[r]) for r, _ in self.specs))
         if self.fields is not None:
             keys = {k for k in keys if k[0] in self.fields}
         return sorted(keys, key=lambda k: (k[1], k[2], k[0]))
@@ -251,54 +288,95 @@ class LinearSystems:
         return {grp[self.corrector] for grp in groups.values()
                 if -len(grp) <= self.corrector < len(grp)}
 
-    def _walk(self):
-        """Walk every solve in order, advancing the per-(subdomain, field)
-        deduplication carry-forward, and yield (key, blocks) for each solve to be
-        emitted: complete across subdomains, addressing already seen, and -- when
-        `corrector` is not None -- the selected corrector of its (field,
-        timestep). A skipped solve still advances the carry-forward but is not
-        yielded and is never assembled, so keys(), len() and __iter__ agree and
-        none of them pay assembly cost for a skipped system. Each field is its own
-        dedup chain, hence the (subdomain, field) state key: interleaved fields
-        must not borrow one another's most-recent values."""
+    def _walk(self, load_data):
+        """Walk every solve in order and yield (key, blocks) for each solve to be
+        emitted. The `load_data` argument specifies that `blocks` is empty (if 
+        False) or that it carries the emitted solve's carried-forward matrix data 
+        (if True)."""
         ordered = self._ordered_keys()
         selected = self._selected(ordered)
         state = defaultdict(dict)
+        seen_addr = set()
         for key in ordered:
             field = key[0]
-            blocks, complete = [], True
+            blocks, complete, addressed = [], True, True
             for si, (root, block) in enumerate(self.specs):
                 sd = self.maps[root].get(key)
                 if sd is None or not os.path.isfile(f'{sd}/info'):
                     complete = False
                     break
-                st = state[(si, field)]
-                for q in DEDUP_QUANTS:
-                    path = f'{sd}/{q}'
-                    if os.path.isfile(path):
-                        st[q] = load(path, np.uint32 if q in INT_QUANTS else np.float64, block)
-                blocks.append((dict(st), sd, block))
-            if not complete:
+                if load_data:
+                    st = state[(si, field)]
+                    for q in DEDUP_QUANTS:
+                        path = f'{sd}/{q}'
+                        if os.path.isfile(path):
+                            st[q] = load(path, np.uint32 if q in INT_QUANTS else np.float64, block)
+                    blocks.append((dict(st), sd, block))
+                    addr = 'lowerAddr' in st
+                else:
+                    if (si, field) not in seen_addr and os.path.isfile(f'{sd}/lowerAddr'):
+                        seen_addr.add((si, field))
+                    addr = (si, field) in seen_addr
+                if not addr:
+                    addressed = False   # addressing not dumped yet (retain the run's first dump)
+            if not complete or not addressed:
                 continue
-            if any('lowerAddr' not in st for st, _, _ in blocks):
-                continue   # addressing not dumped yet (retain the run's first dump)
             if selected is not None and key not in selected:
                 continue   # not the requested corrector: carry-forward advanced, not yielded
             yield key, blocks
 
+    def _walk_h5(self):
+        """The HDF5 analogue of _walk: yield (key, (group, struct_id, data_id))
+        for each system to emit under `fields`/`corrector`."""
+        ordered = self._ordered_keys()
+        selected = self._selected(ordered)
+        for key in ordered:
+            if selected is not None and key not in selected:
+                continue
+            yield key, self._h5_index[key]
+
     def keys(self):
-        """The (field, timestep, solve) keys that iteration yields, in solve order
-        -- `fields` and `corrector` applied, and incomplete / not-yet-addressed
-        solves excluded. len(self) and iteration agree with this exactly."""
-        return [key for key, _ in self._walk()]
+        """The (field, timestep, solve) keys that iteration yields, in solve order.
+        """
+        if self.h5path is not None:
+            return [key for key, _ in self._walk_h5()]
+        return [key for key, _ in self._walk(load_data=False)]
 
     def __len__(self):
-        return sum(1 for _ in self._walk())
+        if self.h5path is not None:
+            return sum(1 for _ in self._walk_h5())
+        return sum(1 for _ in self._walk(load_data=False))
 
     def __iter__(self):
+        if self.h5path is not None:
+            yield from self._iter_h5()
+            return
         orig_cache = {}
-        for key, blocks in self._walk():
+        for key, blocks in self._walk(load_data=True):
             yield self._assemble(key, blocks, orig_cache)
+
+    def _iter_h5(self):
+        """Yield one assembled system at a time from the HDF5 file. The matrix
+        structure and values are deduplicated (carried forward), so consecutive
+        systems that reuse them reload nothing: at most one matrix plus one
+        solve's b/sol/init vectors are held in memory."""
+        with h5py.File(self.h5path, 'r') as f:
+            structs, datas, systems = f['matrices/struct'], f['matrices/data'], f['systems']
+            si = di = None
+            indptr = indices = data = None
+            for key, (name, s, d) in self._walk_h5():
+                if s != si:
+                    g = structs[str(s)]
+                    indptr, indices, si = g['indptr'][:], g['indices'][:], s
+                if d != di:
+                    data, di = datas[str(d)][:], d
+                n = indptr.shape[0] - 1
+                Ad = csr_array((data, indices, indptr), shape=(n, n))
+                A = (0.5 * (Ad + Ad.T)).tocsr()
+                grp = systems[name]
+                yield LinearSystem(key[0], key[1], key[2], A,
+                                   grp['b'][:], grp['sol'][:], grp['init'][:],
+                                   json.loads(grp.attrs['info']))
 
     def _assemble(self, key, blocks, orig_cache):
         """Build the monolithic global system for one (yielded) solve from the
@@ -343,7 +421,7 @@ class LinearSystems:
             if init_b is not None and init_b.size:
                 initvec[go] = init_b
 
-        A = sp.coo_array(
+        A = coo_array(
             (np.concatenate(vals).astype(np.float64),
              (np.concatenate(rows).astype(np.int64),
               np.concatenate(cols).astype(np.int64))),
@@ -354,30 +432,67 @@ class LinearSystems:
 
 if __name__ == '__main__':
 
+    # Repackage a whole dump tree into one HDF5 file that LinearSystems iterates
+    # exactly as it does the tree. Usage: Absol.py <case_dir> [out.h5].
     folder = sys.argv[1].rstrip('/')
-    systems = LinearSystems(folder, fields='p', corrector=-1)
-    total = len(systems.keys())
+    out = sys.argv[2] if len(sys.argv) > 2 else folder + '.h5'
 
-    counter = defaultdict(int)   # field -> .mat index
+    systems = LinearSystems(folder)
+    total = len(systems)
+
     mrr = 0.0
     ml2 = 0.0
+    struct_state = {}    # field -> (id, indptr, indices) most recently stored
+    data_state = {}      # field -> (id, values) most recently stored
+    si = di = -1         # next structure / values id to allocate
 
-    for n, system in enumerate(systems):
-        outdir = f'{folder}/Absol/{system.field}'
-        os.makedirs(outdir, exist_ok=True)
-        counter[system.field] += 1
-        sio.savemat(
-            os.path.join(outdir, f'{counter[system.field]}.mat'),
-            {'A': desymmetrize(system.A), 'b': system.b,
-             'sol': system.sol, 'init': system.init, 'niter': system.niter},
-        )
+    with h5py.File(out, 'w') as h5:
+        gsys = h5.create_group('systems')
+        gstruct = h5.create_group('matrices/struct')
+        gdata = h5.create_group('matrices/data')
 
-        print('processed', n + 1, '/', total, 'systems', end='\t')
-        effTol = max(system.info['relativeTolerance'] * openfoam_residual(system.A, system.b, system.init),
-                     system.info['tolerance'])
-        mrr = max(mrr, openfoam_residual(system.A, system.b, system.sol) / effTol)
-        print('max residual:reported:', round(mrr, 2), end='\t')
-        ml2 = max(ml2, np.linalg.norm(system.A @ system.sol - system.b) / np.linalg.norm(system.b))
-        print('max l2 error:', ml2, end='\r')
+        for n, system in enumerate(systems):
+
+            # De-symmetrized (diag + doubled strict upper) CSR storage. The
+            # structure (indptr/indices) is constant for a field over the whole
+            # run and its values change only once per timestep, so each is
+            # written only when it differs from that field's previous solve.
+
+            field = system.field
+            Ad = desymmetrize(system.A).tocsr()
+
+            ss = struct_state.get(field)
+            if ss is None or not (np.array_equal(Ad.indptr, ss[1])
+                                  and np.array_equal(Ad.indices, ss[2])):
+                si += 1
+                g = gstruct.create_group(str(si))
+                g.create_dataset('indptr', data=Ad.indptr)
+                g.create_dataset('indices', data=Ad.indices)
+                struct_state[field] = ss = (si, Ad.indptr, Ad.indices)
+
+            ds = data_state.get(field)
+            if ds is None or not np.array_equal(Ad.data, ds[1]):
+                di += 1
+                gdata.create_dataset(str(di), data=Ad.data)
+                data_state[field] = ds = (di, Ad.data)
+
+            gs = gsys.create_group(str(n))
+            gs.create_dataset('b', data=system.b)
+            gs.create_dataset('sol', data=system.sol)
+            gs.create_dataset('init', data=system.init)
+            gs.attrs['field'] = system.field
+            gs.attrs['timestep'] = system.timestep
+            gs.attrs['solve'] = system.solve
+            gs.attrs['struct'] = ss[0]
+            gs.attrs['data'] = ds[0]
+            gs.attrs['info'] = json.dumps(system.info)
+
+            print('processed', n + 1, '/', total, 'systems', end='\t')
+            effTol = max(system.info['relativeTolerance'] * openfoam_residual(system.A, system.b, system.init),
+                         system.info['tolerance'])
+            mrr = max(mrr, openfoam_residual(system.A, system.b, system.sol) / effTol)
+            print('max residual:reported:', round(mrr, 2), end='\t')
+            ml2 = max(ml2, np.linalg.norm(system.A @ system.sol - system.b) / np.linalg.norm(system.b))
+            print('max l2 error:', ml2, end='\r')
 
     print()
