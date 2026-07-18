@@ -1,0 +1,11 @@
+EXE_INC = \
+    -I../lnInclude \
+    -I$(LIB_SRC)/OpenFOAM/lnInclude \
+    -I$(LIB_SRC)/lduSolvers/lnInclude \
+    -I$(LIB_SRC)/finiteVolume/lnInclude
+
+EXE_LIBS = \
+    -L$(FOAM_USER_LIBBIN) \
+    -lPCGBandit \
+    -lfiniteVolume
+    

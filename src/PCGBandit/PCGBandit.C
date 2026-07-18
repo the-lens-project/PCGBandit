@@ -67,6 +67,8 @@ namespace Foam
     #include "Absol/initializeDumping.H"
     #endif
 
+    HashPtrTable<DecomposedLaplacian> nonSerializableObjects_;
+
 }
 
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
@@ -305,6 +307,10 @@ void Foam::PCGBandit::queryLearner
                 i = floor(scalar(d) * rndGen.sample01<scalar>());
             } else if (banditAlgorithm_ == "ThompsonSampling") {
                 #include "ThompsonSampling.H"
+            } else if (banditAlgorithm_ == "simTsallisINF") {
+                #include "simTsallisINF.H"
+            } else if (banditAlgorithm_ == "SpeKL") {
+                #include "SpeKL.H"
             } else {
                 #include "TsallisINF.H"
             }
