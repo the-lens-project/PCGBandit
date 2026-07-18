@@ -53,11 +53,19 @@ namespace Foam
     const List<word> ICTCSuffixes = {"m4", "m3p5", "m3", "m2p5", "m2", "m1p5", "m1", "m0p5"};
     const HashSet<word> noCacheAgglomeration = {"agglomerator", "nCellsInCoarsestLevel", "mergeLevels"};
 
+    // --- Deterministic cost estimation constants (calibrated on 4-core pitzDaily)
+    const scalar ICTC_SETUP_WEIGHT = 10.0;
+    const scalar GAMG_ASSEMBLY_WEIGHT = 6.0;
+    const scalar GAMG_AGGLOMERATION_WEIGHT = 45.0;
+    const scalar ICTC_SMOOTHER_SETUP_WEIGHT = 18.0;
+    const scalar ICTC_SMOOTHER_APPLY_WEIGHT = 2.5;
+    const scalar COARSE_CG_WEIGHT = 0.08;
+    const scalar COMM_EVENT_FLOPS = 1.0e4;
+    const scalar DIRECT_LU_WEIGHT = 0.3;
+
     #ifdef DUMP_ABSOL
     #include "Absol/initializeDumping.H"
     #endif
-
-    HashPtrTable<DecomposedLaplacian> nonSerializableObjects_;
 
 }
 
@@ -101,7 +109,6 @@ Foam::PCGBandit::PCGBandit
     // --- Learning algorithm specification
     lossEstimator_ = solverControls.getOrDefault<word>("lossEstimator", "RV");
     deterministic_ = Switch(solverControls.getOrDefault<word>("deterministic", "no"));
-    seed_ = mesh.time().controlDict().getOrDefault<label>("randomSeed", 0);
     backstop_ = solverControls.getOrDefault<label>("backstop", -1);
     static_ = label(solverControls.getOrDefault<label>("static", -1));
     randomUniform_ = Switch(solverControls.getOrDefault<word>("randomUniform", "no"));
@@ -110,7 +117,7 @@ Foam::PCGBandit::PCGBandit
     if (!preconditionerDictsMap.found(banditName_))
     {
         if (Pstream::myProcNo() == 0) {
-            rndGen.reset(seed_);
+            rndGen.reset(mesh.time().controlDict().getOrDefault<label>("randomSeed", 0));
         }
 
         // --- Read GAMG tune flags and option lists
@@ -298,10 +305,6 @@ void Foam::PCGBandit::queryLearner
                 i = floor(scalar(d) * rndGen.sample01<scalar>());
             } else if (banditAlgorithm_ == "ThompsonSampling") {
                 #include "ThompsonSampling.H"
-            } else if (banditAlgorithm_ == "simTsallisINF") {
-                #include "simTsallisINF.H"
-            } else if (banditAlgorithm_ == "SpeKL") {
-                #include "SpeKL.H"
             } else {
                 #include "TsallisINF.H"
             }
@@ -325,94 +328,230 @@ void Foam::PCGBandit::queryLearner
     #endif
 }
 
+namespace Foam 
+{
+
+    static inline bool isGAMG(const word& p)
+    {
+        return p == "GAMG" || p == "FGAMG";
+    }
+
+    static scalar smootherApplyCost
+    (
+        const word& smoother,
+        const label nnzL,
+        const label nCells,
+        const label nSweeps,
+        const scalar fillFactor = 1.0
+    )
+    {
+        if (nSweeps <= 0) {
+            return 0.0;
+        }
+
+        scalar c = 0.0;
+        const scalar matvec = scalar(2 * nnzL + nCells);
+        if (smoother.find("ICTC") != string::npos) {
+            c = matvec + ICTC_SMOOTHER_APPLY_WEIGHT * fillFactor * scalar(nnzL) + scalar(2 * nCells);
+            if (smoother.find("GaussSeidel") != string::npos) {
+                c += matvec;
+            }
+        } else if (smoother == "symGaussSeidel") {
+            c = scalar(4 * nnzL + 2 * nCells);
+        } else {
+            if (smoother == "GaussSeidel" || smoother == "DICGaussSeidel") {
+                c += scalar(2 * nnzL + nCells);
+            }
+            if (smoother == "DIC" || smoother == "DICGaussSeidel") {
+                c += scalar(4 * nnzL + nCells);
+            }
+            if (c == 0.0) {
+                c = matvec;
+            }
+        }
+        return c * scalar(nSweeps);
+    }
+
+}
+
+Foam::scalar Foam::PCGBandit::communicationCostEstimate
+(
+  const word preconditioner
+) const
+{
+    if (Pstream::nProcs(matrix_.mesh().comm()) <= 1 || !isGAMG(preconditioner)) {
+        return 0.0;
+    }
+
+    const GAMGAgglomeration& agg = GAMGAgglomeration::New(matrix_, subDict);
+    const label L = agg.size();
+
+    // --- Each level: restrict/prolong + smoother halo exchange + scale reduction
+    scalar perVcycle = scalar(3 * L);
+
+    // --- DIC-PCG iterations (n) if directSolveCoarsest is off
+    if (L > 0 && !Switch(subDict.getOrDefault<word>("directSolveCoarsest", "no"))) {
+        const scalar ncG = returnReduce(scalar(max(agg.nCells(L - 1), label(1))), sumOp<scalar>());
+        perVcycle += COARSE_CG_WEIGHT * ncG;
+    }
+
+    return COMM_EVENT_FLOPS * perVcycle * scalar(subDict.getOrDefault<label>("nVcycles", 2));
+}
 
 Foam::scalar Foam::PCGBandit::perIterationCostEstimate
 (
     const word preconditioner
 ) const
 {
+    const label nCells = matrix_.diag().size();
+    const label nnzL = matrix_.lower().size();
 
-    label nCells = matrix_.diag().size();
-    label nnz = matrix_.lower().size();
-    label cost = 2 * nnz + 6 * nCells;
+    // --- One CG step has a matvec (2 * nnzL + nCells) and five vector operations
+    const scalar cgStep = scalar(2 * nnzL + 6 * nCells);
+
     if (preconditioner == "ICTC") {
-        nnz = Foam::debug::controlDict().get<label>("ICTC_NNZ");
-        return returnReduce(scalar(cost + 2 * (nnz + nCells)), maxOp<scalar>());
-    } else {
-        if (preconditioner == "DIC") {
-            return returnReduce(scalar(cost + 4 * nnz + nCells), maxOp<scalar>());
+        return returnReduce(cgStep + scalar(2 * (debug::controlDict().get<label>("ICTC_NNZ") + nCells)), maxOp<scalar>());
+    }
+    if (preconditioner == "DIC") {
+        return returnReduce(cgStep + scalar(4 * nnzL + nCells), maxOp<scalar>());
+    }
+
+    const label nPreSweeps  = subDict.getOrDefault<label>("nPreSweeps", 0);
+    const label nPostSweeps = subDict.getOrDefault<label>("nPostSweeps", 2);
+    const label maxPreSweeps = 4;
+    const label maxPostSweeps = 4;
+    const label preSweepsLevelMultiplier = 1;
+    const label postSweepsLevelMultiplier = 1;
+    const label nVcycles = subDict.getOrDefault<label>("nVcycles", 2);
+    const label nFinestSweeps = subDict.getOrDefault<label>("nFinestSweeps", 2);
+    const word smoother = subDict.get<word>("smoother");
+    const bool interpolateCorrection = Switch(subDict.getOrDefault<word>("interpolateCorrection", "no"));
+    const bool directSolveCoarsest = Switch(subDict.getOrDefault<word>("directSolveCoarsest", "no"));
+
+    const bool scaleCorrection = matrix_.symmetric();
+    const GAMGAgglomeration& agg = GAMGAgglomeration::New(matrix_, subDict);
+    const label L = agg.size();
+
+    // --- Compute ratio of ICTC smoother fills to agglomeration matrix fills
+    scalar fillFactor = 1.0;
+    if (smoother.find("ICTC") != std::string::npos) {
+        scalar nnzAgg = scalar(nnzL);
+        for (label i = 0; i < L; i++) {
+            nnzAgg += scalar(agg.nFaces(i));
+        }
+        fillFactor = scalar(debug::controlDict().get<label>("ICTC_SMOOTHER_NNZ")) / nnzAgg;
+    }
+
+    scalar perVcycle = 0.0;
+
+    // --- Finest level: smoothing + prolongation + corrections
+    perVcycle += smootherApplyCost(smoother, nnzL, nCells, nFinestSweeps, fillFactor);
+    perVcycle += scalar(2 * nCells);
+    if (interpolateCorrection) {
+        perVcycle += scalar(2 * nnzL + 3 * nCells);
+    }
+    if (scaleCorrection) {
+        perVcycle += scalar(2 * nnzL + 4 * nCells);
+    }
+
+    // --- Per vcycle restriction + smoothing + residual computation + prolongation
+    for (label i = 0; i < L; i++) {
+        const label nc  = agg.nCells(i);
+        const label nf  = agg.nFaces(i);
+        const label nPre  = (nPreSweeps  > 0)
+            ? min(nPreSweeps  + preSweepsLevelMultiplier  * i, maxPreSweeps)  : 0;
+        const label nPost = (nPostSweeps > 0)
+            ? min(nPostSweeps + postSweepsLevelMultiplier * i, maxPostSweeps) : 0;
+
+        perVcycle += scalar(2 * nc);
+        perVcycle += smootherApplyCost(smoother, nf, nc, nPre + nPost, fillFactor);
+        if (nPre > 0) {
+            perVcycle += scalar(2 * nf + nc);
+        }
+        perVcycle += scalar(2 * nc);
+        if (interpolateCorrection) {
+            perVcycle += scalar(2 * nf + 3 * nc);
+        }
+        if (scaleCorrection) {
+            perVcycle += scalar(2 * nf + 4 * nc);
         }
     }
 
-    label nPreSweeps = subDict.getOrDefault<label>("nPreSweeps", 0);
-    label nPostSweeps = subDict.getOrDefault<label>("nPostSweeps", 2);
-    label maxPreSweeps = 4;
-    label maxPostSweeps = 4;
-    label preSweepsLevelMultiplier = 1;
-    label postSweepsLevelMultiplier = 1;
-    label nVcycles = subDict.getOrDefault<label>("nVcycles", 2);
-    label nSweeps;
-    word smoother = subDict.get<word>("smoother");
-    const GAMGAgglomeration *agglomeration = &GAMGAgglomeration::New(matrix_, subDict);
-
-    cost += 2 * nnz + nCells;
-    for (label i = 0; i <= agglomeration->size(); i++) {
-
-        if (i > 0) {
-            nCells = agglomeration->nCells(i-1);
-            nnz = agglomeration->nFaces(i-1);
-            cost += (2 * nnz + nCells) * nVcycles;
-            nSweeps = 0;
-            if (nPreSweeps > 0) {
-                nSweeps += min(nPreSweeps+preSweepsLevelMultiplier*(i-1), maxPreSweeps);
-            }
-            if (nPostSweeps > 0) {
-                nSweeps += min(nPostSweeps+postSweepsLevelMultiplier*(i-1), maxPostSweeps);
-            }
+    // --- Coarsest-level direct (n^2) or Poisson-like DIC-PCG (sqrt(n)) solve
+    if (L > 0) {
+        const scalar nc = max(scalar(agg.nCells(L - 1)), scalar(1));
+        const label  nf = agg.nFaces(L - 1);
+        if (directSolveCoarsest) {
+            const scalar ncG = returnReduce(scalar(agg.nCells(L - 1)), sumOp<scalar>());
+            perVcycle += 2.0 * ncG * ncG;
         } else {
-            nSweeps = subDict.getOrDefault<label>("nFinestSweeps", 2);
-        }
-
-        nSweeps *= nVcycles;
-        if (smoother == "symGaussSeidel") {
-            cost += (4 * nnz + 2 * nCells) * nSweeps;
-        } else {
-            if (smoother == "GaussSeidel" || smoother == "DICGaussSeidel") {
-                cost += (2 * nnz + nCells) * nSweeps;
-            }
-            if (smoother == "DIC" || smoother == "DICGaussSeidel") {
-                cost += (4 * nnz + nCells) * nSweeps;
-            }
+            perVcycle += sqrt(nc) * scalar(6 * nf + 3 * label(nc));
         }
     }
 
-    return returnReduce(scalar(cost), maxOp<scalar>());
+    return returnReduce(cgStep + perVcycle * scalar(nVcycles), maxOp<scalar>()) + communicationCostEstimate(preconditioner);
 }
+
+
+Foam::scalar Foam::PCGBandit::setupCostEstimate
+(
+    const word preconditioner
+) const
+{
+    const scalar pICE = perIterationCostEstimate(preconditioner);
+
+    if (preconditioner == "ICTC") {
+        return ICTC_SETUP_WEIGHT * pICE;
+    }
+    if (!isGAMG(preconditioner)) {
+        return pICE;
+    }
+
+    // --- GAMG: rebuild agglomeration (unless cached) and smoothers every solve
+    const GAMGAgglomeration& agg = GAMGAgglomeration::New(matrix_, subDict);
+    scalar hierarchy = scalar(2 * matrix_.lower().size() + matrix_.diag().size());
+    for (label i = 0; i < agg.size(); i++) {
+        hierarchy += scalar(2 * agg.nFaces(i) + agg.nCells(i));
+    }
+    const bool cached = subDict.getOrDefault<label>("cacheAgglomeration", 1);
+    scalar weight = GAMG_ASSEMBLY_WEIGHT + (cached ? 0.0 : GAMG_AGGLOMERATION_WEIGHT);
+    scalar setup = weight * hierarchy;
+
+    // --- FGAMG: precomputes smoother factors once per solve
+    const word smoother = subDict.getOrDefault<word>("smoother", "");
+    const word coarsestSmoother = subDict.getOrDefault<word>("coarsestSmoother", smoother);
+    if (smoother.find("ICTC") != string::npos
+     || coarsestSmoother.find("ICTC") != string::npos) {
+        const label smootherNNZ = debug::controlDict().get<label>("ICTC_SMOOTHER_NNZ");
+        setup += ICTC_SMOOTHER_SETUP_WEIGHT * scalar(smootherNNZ);
+    }
+
+    // --- Dense LU factorisation (n^3) if directSolveCoarsest is on
+    if (agg.size() > 0 && Switch(subDict.getOrDefault<word>("directSolveCoarsest", "no"))) {
+        const scalar ncG = returnReduce(scalar(agg.nCells(agg.size() - 1)), sumOp<scalar>());
+        setup += DIRECT_LU_WEIGHT * ncG * ncG * ncG;
+    }
+
+    return returnReduce(setup, maxOp<scalar>());
+}
+
+
 
 Foam::scalar Foam::PCGBandit::totalCostEstimate
 (
     const label nIterations
 ) const
 {
-
-    word preconditioner = subDict.get<word>("preconditioner");
-    scalar pICE = perIterationCostEstimate(preconditioner);
-    scalar cost;
-
-    if (preconditioner == "GAMG") {
-        cost = scalar(2 * matrix_.lower().size() + matrix_.diag().size());
-    } else if (preconditioner == "ICTC") {
-        cost = 10.0 * pICE;
-    } else {
-        cost = pICE;
-    }
+    const word preconditioner = subDict.get<word>("preconditioner");
+    const scalar pICE = perIterationCostEstimate(preconditioner);
+    scalar cost = setupCostEstimate(preconditioner);
 
     label backstopIter = maxIter_;
     if (backstop_ == -1) {
         backstopIter = label(scalar(backstopIter) * perIterationCostEstimate("DIC") / pICE);
     }
     if (nIterations > backstopIter) {
-        cost += pICE * scalar(backstopIter) 
+        cost += pICE * scalar(backstopIter)
                 + perIterationCostEstimate("DIC") * scalar(nIterations - backstopIter + label(preconditioner != "DIC"));
     } else {
         cost += pICE * scalar(nIterations);
@@ -516,6 +655,9 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
 
                 learningTime -= clockValue::now();
                 preconstructTime = preconstructTime.now();
+
+                // --- Resets the ICTCSmoother NNZ accumulator for deterministic mode
+                debug::controlDict().set<label>("ICTC_SMOOTHER_NNZ", 0);
 
                 preconPtr = lduMatrix::preconditioner::New(*this, preconditionerDict);
 

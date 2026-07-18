@@ -30,12 +30,16 @@ Foam::ICTCSmootherBase::ICTCSmootherBase
     ),
     
     diagL_(matrix_.diag().size()),
-    lowerL_(200 * matrix_.diag().size()),
-    rowAddrL_(200 * matrix_.diag().size()),
+    lowerL_(ICTCPreconditioner::STORAGE * matrix_.diag().size()),
+    rowAddrL_(ICTCPreconditioner::STORAGE * matrix_.diag().size()),
     colPtrL_(matrix_.diag().size() + 1)
 {
-    const scalar pivmin = 1e-16;
-    ICTCPreconditioner::calcL(diagL_, lowerL_, rowAddrL_, colPtrL_, matrix_, droptol, pivmin);
+    label nnz = ICTCPreconditioner::calcL(diagL_, lowerL_, rowAddrL_, colPtrL_, matrix_, droptol, ICTCPreconditioner::PIVMIN);
+
+    // --- Accumulate factor sparsity for cost estimation; reset in PCGBandit::scalarSolve
+    const word key = "ICTC_SMOOTHER_NNZ";
+    dictionary& cdict = debug::controlDict();
+    cdict.set<label>(key, cdict.getOrDefault<label>(key, 0) + nnz);
 }
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //

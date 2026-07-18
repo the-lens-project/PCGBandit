@@ -13,9 +13,7 @@ SourceFiles
 #ifndef PCGBandit_H
 #define PCGBandit_H
 #include "lduMatrix.H"
-#include "DecomposedLaplacian.H"
 #include "MirrorDescent.H"
-#include "Similarity.H"
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 namespace Foam
 {
@@ -41,12 +39,13 @@ private:
     bool deterministic_;
     bool randomUniform_;
     word banditAlgorithm_;
-    label seed_;
     label backstop_;
     label static_;
 
     void queryLearner(const scalar initialResidual) const;
     scalar perIterationCostEstimate(const word preconditioner) const;
+    scalar setupCostEstimate(const word preconditioner) const;
+    scalar communicationCostEstimate(const word preconditioner) const;
     scalar totalCostEstimate(const label nIterations) const;
 
 public:

@@ -49,6 +49,9 @@ public:
     //- Runtime type information
     TypeName("ICTC");
 
+    //- Default storage coefficient and pivot
+    static constexpr label STORAGE = 200;
+    static constexpr scalar PIVMIN = 1e-16;
 
     // Constructors
 

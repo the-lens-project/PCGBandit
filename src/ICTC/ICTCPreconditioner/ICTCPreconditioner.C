@@ -29,15 +29,15 @@ Foam::ICTCPreconditioner::ICTCPreconditioner
 :
     lduMatrix::preconditioner(sol),
     diagL_(sol.matrix().diag().size()),
-    lowerL_(controlDict_.getOrDefault<label>("storageCoeff", 200) * sol.matrix().diag().size()),
-    rowAddrL_(controlDict_.getOrDefault<label>("storageCoeff", 200) * sol.matrix().diag().size()),
+    lowerL_(controlDict_.getOrDefault<label>("storageCoeff", STORAGE) * sol.matrix().diag().size()),
+    rowAddrL_(controlDict_.getOrDefault<label>("storageCoeff", STORAGE) * sol.matrix().diag().size()),
     colPtrL_(sol.matrix().diag().size() + 1)
 {
 
     const scalar droptol = controlDict_.getOrDefault<scalar>("droptol", 1.0);
-    const scalar pivmin = controlDict_.getOrDefault<scalar>("pivmin", 1e-16);
+    const scalar pivmin = controlDict_.getOrDefault<scalar>("pivmin", PIVMIN);
     label nnz = calcL(diagL_, lowerL_, rowAddrL_, colPtrL_, sol.matrix(), droptol, pivmin);
-    Foam::debug::controlDict().set<label>("ICTC_NNZ", nnz);
+    debug::controlDict().set<label>("ICTC_NNZ", nnz);
 
 }
 
