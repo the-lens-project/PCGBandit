@@ -34,6 +34,8 @@ public:                                                                        \
 
 // Declaring ICTCSmoother variants
 
+DECLARE_ICTC_SMOOTHER(ICTC_m5)
+DECLARE_ICTC_SMOOTHER(ICTC_m4p5)
 DECLARE_ICTC_SMOOTHER(ICTC_m4)
 DECLARE_ICTC_SMOOTHER(ICTC_m3p5)
 DECLARE_ICTC_SMOOTHER(ICTC_m3)

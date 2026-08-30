@@ -75,6 +75,8 @@ Foam::FGAMGSolver::FGAMGSolver
         "ICTC_m3",
         "ICTC_m3p5",
         "ICTC_m4",
+        "ICTC_m4p5",
+        "ICTC_m5",
 	"ICTCGaussSeidel_m0p5",
 	"ICTCGaussSeidel_m1",
 	"ICTCGaussSeidel_m1p5",

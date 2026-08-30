@@ -59,6 +59,7 @@ namespace Foam
     const scalar GAMG_AGGLOMERATION_WEIGHT = 45.0;
     const scalar ICTC_SMOOTHER_SETUP_WEIGHT = 18.0;
     const scalar ICTC_SMOOTHER_APPLY_WEIGHT = 2.5;
+    const scalar ICTC_SMOOTHER_BASELINE = 10.0;
     const scalar COARSE_CG_WEIGHT = 0.08;
     const scalar COMM_EVENT_FLOPS = 1.0e4;
     const scalar DIRECT_LU_WEIGHT = 0.3;
@@ -95,6 +96,7 @@ Foam::PCGBandit::PCGBandit
     // --- Contextual information specification
     word preconditioner = solverControls.get<word>("preconditioner");
     const fvMesh& mesh = dynamicCast<const fvMesh>(matrix.mesh());
+    nGeometricD_ = mesh.nGeometricD();          // 2 (planar) or 3
     if (preconditioner == "separate") {
         banditName_ = mesh.name() + "." + fieldName;
     } else if (preconditioner == "joint") {
@@ -342,7 +344,8 @@ namespace Foam
         const label nnzL,
         const label nCells,
         const label nSweeps,
-        const scalar fillFactor = 1.0
+        const scalar fillFactor = 1.0,
+        const scalar nnzBaseline = 0.0
     )
     {
         if (nSweeps <= 0) {
@@ -352,7 +355,7 @@ namespace Foam
         scalar c = 0.0;
         const scalar matvec = scalar(2 * nnzL + nCells);
         if (smoother.find("ICTC") != string::npos) {
-            c = matvec + ICTC_SMOOTHER_APPLY_WEIGHT * fillFactor * scalar(nnzL) + scalar(2 * nCells);
+            c = matvec + (ICTC_SMOOTHER_APPLY_WEIGHT * fillFactor + nnzBaseline) * scalar(nnzL) + scalar(2 * nCells);
             if (smoother.find("GaussSeidel") != string::npos) {
                 c += matvec;
             }
@@ -406,6 +409,9 @@ Foam::scalar Foam::PCGBandit::perIterationCostEstimate
     const label nCells = matrix_.diag().size();
     const label nnzL = matrix_.lower().size();
 
+    // ICTC scattered-triangular-solve baseline (density-independent, 3D only).
+    const scalar ictcBaseline = (nGeometricD_ >= 3) ? ICTC_SMOOTHER_BASELINE: 0.0;
+
     // --- One CG step has a matvec (2 * nnzL + nCells) and five vector operations
     const scalar cgStep = scalar(2 * nnzL + 6 * nCells);
 
@@ -445,7 +451,7 @@ Foam::scalar Foam::PCGBandit::perIterationCostEstimate
     scalar perVcycle = 0.0;
 
     // --- Finest level: smoothing + prolongation + corrections
-    perVcycle += smootherApplyCost(smoother, nnzL, nCells, nFinestSweeps, fillFactor);
+    perVcycle += smootherApplyCost(smoother, nnzL, nCells, nFinestSweeps, fillFactor, ictcBaseline);
     perVcycle += scalar(2 * nCells);
     if (interpolateCorrection) {
         perVcycle += scalar(2 * nnzL + 3 * nCells);
@@ -464,7 +470,7 @@ Foam::scalar Foam::PCGBandit::perIterationCostEstimate
             ? min(nPostSweeps + postSweepsLevelMultiplier * i, maxPostSweeps) : 0;
 
         perVcycle += scalar(2 * nc);
-        perVcycle += smootherApplyCost(smoother, nf, nc, nPre + nPost, fillFactor);
+        perVcycle += smootherApplyCost(smoother, nf, nc, nPre + nPost, fillFactor, ictcBaseline);
         if (nPre > 0) {
             perVcycle += scalar(2 * nf + nc);
         }
