@@ -50,10 +50,57 @@ namespace Foam
         Tuple2<word, List<word>>("nFinestSweeps",           {"2"}),
         Tuple2<word, List<word>>("nVcycles",                {"1", "2"})
     };
-    const List<word> ICTCSuffixes = {"m4", "m3p5", "m3", "m2p5", "m2", "m1p5", "m1", "m0p5"};
+    const List<word> ICTCSuffixes =
+        {"m5", "m4p5", "m4", "m3p5", "m3", "m2p5", "m2", "m1p5", "m1", "m0p5"};
+    const List<word> SORSuffixes =
+        {"p0p1", "p0p2", "p0p3", "p0p4", "p0p5", "p0p6", "p0p7", "p0p8", "p0p9",
+         "p1p0", "p1p1", "p1p2", "p1p3", "p1p4", "p1p5", "p1p6", "p1p7", "p1p8", "p1p9"};
     const HashSet<word> noCacheAgglomeration = {"agglomerator", "nCellsInCoarsestLevel", "mergeLevels"};
 
-    // --- Deterministic cost estimation constants (calibrated on 4-core pitzDaily)
+    // A strided window [minIdx, maxIdx] step inc into a suffix list; lets the 
+    // ICTC droptol axis and the SOR omega axis be tuned through one mechanism.
+    struct SmootherRange
+    {
+        label minIdx;
+        label maxIdx;
+        label inc;
+    };
+
+    // Build a SmootherRange over `suffixes` from solverControls: minKey/maxKey name
+    // the endpoint suffixes (defaulting to minDefault/maxDefault) and numKey sets
+    // how many entries to select evenly across that window (0 or omitted = do not
+    // tune this axis, i.e. select no ICTC/SOR smoothers).
+    static SmootherRange readSmootherRange
+    (
+        const dictionary& solverControls,
+        const List<word>& suffixes,
+        const word& minKey,
+        const word& maxKey,
+        const word& numKey,
+        const word& minDefault,
+        const word& maxDefault,
+        const label& numDefault
+    )
+    {
+        SmootherRange range;
+        range.minIdx = suffixes.find(solverControls.getOrDefault<word>(minKey, minDefault));
+        range.maxIdx = suffixes.find(solverControls.getOrDefault<word>(maxKey, maxDefault));
+        if (range.minIdx == -1 || range.maxIdx == -1) {
+            FatalErrorInFunction
+                << minKey << " and " << maxKey << " must each be one of "
+                << suffixes << exit(FatalError);
+        }
+        if (range.minIdx > range.maxIdx) {
+            FatalErrorInFunction
+                << minKey << " cannot come before " << maxKey << " in "
+                << suffixes << exit(FatalError);
+        }
+        const label num = solverControls.getOrDefault<label>(numKey, numDefault);
+        range.inc = max((range.maxIdx - range.minIdx) / max(num - 1, label(1)), label(1));
+        return range;
+    }
+
+    // --- Deterministic cost estimation constants (calibrated on 4-core 2x-resolved pitzDaily)
     const scalar ICTC_SETUP_WEIGHT = 10.0;
     const scalar GAMG_ASSEMBLY_WEIGHT = 6.0;
     const scalar GAMG_AGGLOMERATION_WEIGHT = 45.0;
@@ -123,26 +170,21 @@ Foam::PCGBandit::PCGBandit
         }
 
         // --- Read GAMG tune flags and option lists
-        label minDroptolIdx = ICTCSuffixes.find(solverControls.getOrDefault<word>("minSmootherLogDroptol", "m4"));
-        if (minDroptolIdx == -1) {
-            FatalErrorInFunction << "minSmootherLogDroptol must be one of " << ICTCSuffixes << exit(FatalError);
-        }
-        label maxDroptolIdx = ICTCSuffixes.find(solverControls.getOrDefault<word>("maxSmootherLogDroptol", "m0p5"));
-        if (maxDroptolIdx == -1) {
-            FatalErrorInFunction << "maxSmootherLogDroptol must be one of " << ICTCSuffixes << exit(FatalError);
-        }
-        if (minDroptolIdx > maxDroptolIdx) {
-            FatalErrorInFunction << "minSmootherLogDroptol cannot be greater than maxSmootherLogDroptol" << exit(FatalError);
-        }
-        bool coarsestSmootherTune = Switch(solverControls.getOrDefault<word>("coarsestSmootherTune", "no"));
-        if (coarsestSmootherTune && GAMG_or_FGAMG == "GAMG") {
-            FatalErrorInFunction << "coarsestSmootherTune requires FGAMG" << exit(FatalError);
-        }
-        label inc = max(ICTCSuffixes.size() / solverControls.getOrDefault<label>("numSmootherDroptols", ICTCSuffixes.size()), 1);
+        const SmootherRange ictcRange = readSmootherRange
+        (
+            solverControls, ICTCSuffixes,
+            "minSmootherLogDroptol", "maxSmootherLogDroptol", "numSmootherDroptols",
+            "m4", "m0p5", 4
+        );
+        const SmootherRange sorRange = readSmootherRange
+        (
+            solverControls, SORSuffixes,
+            "minSmootherOmega", "maxSmootherOmega", "numSmootherOmegas",
+            "p0p8", "p1p2", 5
+        );
 
         bool cacheAgglomeration = true;
         label dGAMG = 0;
-        label nCellsGlobal = -1;
         label nCellsMin = -1;
         List<List<word>> GAMGOptions(GAMGDefaultLists.size());
         for (label j = 0; j < GAMGDefaultLists.size(); ++j) {
@@ -155,6 +197,11 @@ Foam::PCGBandit::PCGBandit
                 if (tok.isPunctuation(token::BEGIN_LIST)) {
                     const List<token>& toks = is;
                     DynamicList<word> opts;
+                    // Deduplicate options so e.g. an explicit GaussSeidel and
+                    // SOR's omega=1.0 (also GaussSeidel) collapse to one arm.
+                    auto appendUnique = [&opts](const word& option) {
+                        if (!opts.found(option)) opts.append(option);
+                    };
                     for (const token& t : toks) {
                         if (!t.isPunctuation()) {
                             OStringStream os;
@@ -164,35 +211,23 @@ Foam::PCGBandit::PCGBandit
                                 if (GAMG_or_FGAMG == "GAMG") {
                                     WarningInFunction<< "Set " << config << " smoother but FGAMG unavailable; using GAMG (may be slow)" << endl;
                                 }
-                                for (label finestIdx = minDroptolIdx; finestIdx <= maxDroptolIdx; finestIdx += inc) {
-                                    word finest = config + "_" + ICTCSuffixes[finestIdx];
-                                    if (coarsestSmootherTune) { // pair up smoother and coarsestSmoother
-                                        for (label coarsestIdx = minDroptolIdx; coarsestIdx <= maxDroptolIdx; coarsestIdx += inc) {
-                                            opts.append(finest + "; coarsestSmoother " + config + "_" + ICTCSuffixes[coarsestIdx]);
-                                        }
+                                for (label idx = ictcRange.minIdx; idx <= ictcRange.maxIdx; idx += ictcRange.inc) {
+                                    appendUnique(config + "_" + ICTCSuffixes[idx]);
+                                }
+                            } else if (param == "smoother" && (config == "SOR" || config == "DICSOR")) { // add SOR smoothers
+                                for (label idx = sorRange.minIdx; idx <= sorRange.maxIdx; idx += sorRange.inc) {
+                                    const word& suffix = SORSuffixes[idx];
+                                    if (suffix == "p1p0") { // omega = 1 is the built-in (DIC)GaussSeidel smoother
+                                        appendUnique(config == "SOR" ? word("GaussSeidel") : word("DICGaussSeidel"));
                                     } else {
-                                        opts.append(finest);
+                                        appendUnique(config + "_" + suffix);
                                     }
                                 }
                             } else if (param == "nCellsInCoarsestLevel") {
                                 if (nCellsMin == -1) {
                                     nCellsMin = returnReduce(matrix.diag().size(), minOp<label>());
                                 }
-                                label resolved;
-                                if (config.find('.') != string::npos) {
-                                    scalar exponent = readScalar(config);
-                                    if (exponent <= 0 || exponent >= 1) {
-                                        FatalErrorInFunction
-                                            << "nCellsInCoarsestLevelTune exponent must be between 0 and 1 (exclusive), got "
-                                            << exponent << exit(FatalError);
-                                    }
-                                    if (nCellsGlobal == -1) {
-                                        nCellsGlobal = returnReduce(matrix.diag().size(), sumOp<label>());
-                                    }
-                                    resolved = label(Foam::pow(scalar(nCellsGlobal), exponent));
-                                } else {
-                                    resolved = readLabel(config);
-                                }
+                                label resolved = readLabel(config);
                                 label clamped = max(label(1), min(resolved, nCellsMin));
                                 if (clamped != resolved) {
                                     WarningInFunction
@@ -200,12 +235,9 @@ Foam::PCGBandit::PCGBandit
                                         << " clamped to " << clamped
                                         << " (per-processor min cells: " << nCellsMin << ")" << endl;
                                 }
-                                word resolvedStr = Foam::name(clamped);
-                                if (!opts.found(resolvedStr)) {
-                                    opts.append(resolvedStr);
-                                }
+                                appendUnique(Foam::name(clamped));
                             } else {
-                                opts.append(config);
+                                appendUnique(config);
                             }
                         }
                     }
@@ -265,10 +297,6 @@ Foam::PCGBandit::PCGBandit
                     label size = GAMGOptions[j].size();
                     word config = GAMGOptions[j][remaining % size];
                     pd.set(GAMGDefaultLists[j].first(), config);
-                    label idx = config.find("; coarsestSmoother ");
-                    if (idx != -1) {
-                        pd.set("coarsestSmoother", word(config.substr(idx + 19)));
-                    }
                     remaining /= size;
                 }
             }

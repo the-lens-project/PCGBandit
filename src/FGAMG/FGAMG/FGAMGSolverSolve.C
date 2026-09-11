@@ -526,10 +526,24 @@ void Foam::FGAMGSolver::initVcycle
     }
 }
 
+// Family of a parameterized smoother, used to validate finest/coarsest
+// interpolation bounds. Each family (ICTC, ICTCGaussSeidel, SOR, DICSOR) occupies
+// a contiguous ordered block of smootherList and may be interpolated within;
+// standard smoothers form singleton families that cannot be interpolated.
+static Foam::word smootherFamily(const Foam::word& s)
+{
+    if (s.find("ICTCGaussSeidel_") == 0)                 return "ICTCGaussSeidel";
+    if (s.find("ICTC_") == 0)                            return "ICTC";
+    if (s.find("DICSOR_") == 0 || s == "DICGaussSeidel") return "DICSOR";
+    if (s.find("SOR_") == 0 || s == "GaussSeidel")       return "SOR";
+    return s;
+}
+
+
 Foam::List<Foam::word> Foam::FGAMGSolver::findSmootherRange()
 const
 {
-    
+
     // Retrieves finest & coarsest level drop tolerances if specified in solution file; otherwise defaults to n/A
     const word finestSmoother(controlDict_.lookup("smoother"));
     const word coarsestSmoother = controlDict_.getOrDefault("coarsestSmoother", finestSmoother);
@@ -550,11 +564,9 @@ const
 		<< " for both finest and coarsest levels." << exit(FatalError);
 	}
 
-	// Stores values to check if coarsest and finest smoother specified belong to the same smoother family
-	bool startContainsGaussSeidel = smootherList[startingIndex].find("GaussSeidel") != word::npos;
-	bool endContainsGaussSeidel = smootherList[endingIndex].find("GaussSeidel") != word::npos;
-
-	if (startContainsGaussSeidel != endContainsGaussSeidel) {
+	// Coarsest and finest smoother must belong to the same parameterized
+	// family (ICTC, ICTCGaussSeidel, SOR or DICSOR) to interpolate between.
+	if (smootherFamily(smootherList[startingIndex]) != smootherFamily(smootherList[endingIndex])) {
         	FatalErrorInFunction << "Smoother mismatch specified in solution file. \n"
 		<< "Please retry with selections from " << smootherList  
 		<< " that belong to the same family." << exit(FatalError);

@@ -5,28 +5,30 @@ In addition, this repository implements the following:
 
 * An implementation of a thresholded incomplete Cholesky preconditioner (`ICTC`) with a customizable drop tolerance parameter (`droptol`).
 * An implementation of GAMG (`FGAMG`) that precomputes ICTC (and DIC) smoothing factors before solving the system rather than at each iteration; it also allows the ICTC drop tolerance to vary across multigrid levels.
+* Parameterized successive over-relaxation (`SOR`) smoothers, plus combined DIC/SOR (`DICSOR`) smoothers.
 
 ## Setup
 
 ### Docker setup
 
-Run `sh launch.sh` from the repository root to pull the OpenFOAM Docker image, build all three libraries (`PCGBandit`, `ICTC`, `FGAMG`), and drop into an interactive container shell.
+Run `sh launch.sh` from the repository root to pull the OpenFOAM Docker image, build all four libraries (`ICTC`, `SOR`, `PCGBandit`, `FGAMG`), and drop into an interactive container shell.
 The repository is mounted at `/home/openfoam` inside the container.
 
 ### Building manually
 
 From an OpenFOAM-sourced environment:
 ```
-cd src/PCGBandit && wmake libso && cd ../..
 cd src/ICTC && wmake libso && cd ../..
+cd src/SOR && wmake libso && cd ../..
+cd src/PCGBandit && wmake libso && cd ../..
 cd src/FGAMG && wmake libso && cd ../..
 ```
 
 ## Configuring your case
 
-Add the following line to your OpenFOAM case directory's `system` subfolder:
+Add the following line to your OpenFOAM case directory's `system/controlDict` file:
 ```
-libs ( libICTC.so libFGAMG.so libPCGBandit.so );
+libs ( libICTC.so libSOR.so libFGAMG.so libPCGBandit.so );
 ```
 
 Then, for any PCG solver to be tuned, replace its `solver` and `preconditioner` specifications in `fvSolution` with PCGBandit settings.
@@ -53,7 +55,7 @@ The `ICTC` preconditioner may also be used on its own as a preconditioner for PC
 
 ### Tuning multigrid parameters
 
-To tune over GAMG configurations, add one or more `<param>Tune` keywords, where `<param>` is a valid GAMG parameter.
+To tune over GAMG configurations, add one or more of the nine `<param>Tune` keywords listed below.
 Each `<param>Tune` keyword accepts either `yes` (use built-in defaults), `no` (default), or an explicit list of values:
 ```
 solver          PCGBandit;
@@ -84,24 +86,26 @@ Additional optional keywords (in addition to regular PCG keywords):
 | `DICTune` | `yes` | include `DIC` as a candidate preconditioner |
 | `cacheAgglomeration` | `yes` (auto `no` if tuning agglomerator/nCellsInCoarsestLevel/mergeLevels) | GAMG agglomeration caching |
 | `banditAlgorithm` | `TsallisINF` | bandit algorithm (`TsallisINF` or `ThompsonSampling`) |
-| `lossEstimator` | `RV` | loss estimator for the bandit algorithm (`RV` or `IW`) |
+| `lossEstimator` | `RV` | loss estimator for `TsallisINF` (`RV` or `IW`); unused by `ThompsonSampling` |
 | `backstop` | `-1` | backstop iteration limit (`-1` = auto) |
-| `static` | `-1` | index of static preconditioner schedule (`-1` = off) |
+| `static` | `-1` | fixed zero-based candidate preconditioner index (`-1` = off) |
 | `deterministic` | `no` | deterministic mode for reproducible runs |
 
-When tuning GAMG smoothers, you may also specify `ICTC` or `ICTCGaussSeidel` as options in `smootherTune` or `coarsestSmootherTune`; this approach is best-used with `FGAMG` loaded.
-These will automatically expand to a family of options with different drop tolerances.
+When tuning GAMG smoothers, you may also specify `ICTC` or `ICTCGaussSeidel` as options in `smootherTune`; this approach is best-used with `FGAMG` loaded.
+These automatically expand over the selected drop tolerances.
 Drop tolerances are specified using logarithmic suffixes and controlled by:
 
 | Keyword | Default | Description |
 |---------|---------|-------------|
-| `numSmootherDroptols` | (auto to the number of available drop tolerance (`8`)) | number of drop tolerances to tune over |
+| `numSmootherDroptols` | `4` | target number of drop tolerances to tune over |
 | `minSmootherLogDroptol` | `m4` | smallest drop tolerance for ICTC smoothers (10<sup>-4</sup>) |
 | `maxSmootherLogDroptol` | `m0p5` | largest drop tolerance for ICTC smoothers (10<sup>-0.5</sup>) |
 
 The available suffix values and their corresponding drop tolerances are:
 | Suffix | Drop tolerance |
 |--------|----------------|
+| `m5` | 10<sup>-5</sup> = 0.00001 |
+| `m4p5` | 10<sup>-4.5</sup> ≈ 0.0000316 |
 | `m4` | 10<sup>-4</sup> = 0.0001 |
 | `m3p5` | 10<sup>-3.5</sup> ≈ 0.000316 |
 | `m3` | 10<sup>-3</sup> = 0.001 |
@@ -111,12 +115,46 @@ The available suffix values and their corresponding drop tolerances are:
 | `m1` | 10<sup>-1</sup> = 0.1 |
 | `m0p5` | 10<sup>-0.5</sup> ≈ 0.316 |
 
-You can also independently tune the smoother on the finest level and the coarse levels (requires `FGAMG`):
+With the defaults, each ICTC smoother family expands over `(m4 m3 m2 m1)`. Set `numSmootherDroptols 8` to select all eight suffixes within the default bounds, or set `minSmootherLogDroptol m5` and `numSmootherDroptols 10` to select all ten supported suffixes.
+
+Both the drop-tolerance grid and the SOR grid below use an integer stride through their suffix lists. The requested count is a target: the actual count may differ, and the upper bound may be omitted. For example, the default drop-tolerance grid skips `m0p5`.
+
+### Tuning SOR relaxation factors
+
+Add `SOR` or `DICSOR` to an explicit `smootherTune` list to tune the SOR relaxation factor. `DICSOR` applies DIC smoothing followed by SOR smoothing.
+For example:
+
 ```
-smootherTune       yes;                         // tune finest-level smoother
-coarsestSmootherTune yes;                       // tune coarse-level smoother independently
+smootherTune       (GaussSeidel SOR DICGaussSeidel DICSOR);
+minSmootherOmega   p0p6;
+maxSmootherOmega   p1p4;
+numSmootherOmegas  5;
 ```
-With `coarsestSmootherTune yes` and ICTC/ICTCGaussSeidel in `smootherTune`, each combination of finest-level and coarse-level drop tolerances becomes a candidate configuration.
+
+The SOR tuning controls are:
+
+| Keyword | Default | Description |
+|---------|---------|-------------|
+| `minSmootherOmega` | `p0p8` | smallest encoded relaxation factor |
+| `maxSmootherOmega` | `p1p2` | largest encoded relaxation factor |
+| `numSmootherOmegas` | `5` | target number of relaxation factors to tune over |
+
+Available encoded factors run from `p0p1` through `p1p9` in increments of 0.1. Thus `SOR_p0p6` uses ω=0.6 and `DICSOR_p1p4` uses ω=1.4.
+During family expansion, PCGBandit uses `GaussSeidel` for SOR at ω=1 and `DICGaussSeidel` for DICSOR at ω=1, removing duplicate candidates. Use these built-in names when specifying individual smoothers explicitly; `SOR_p1p0` and `DICSOR_p1p0` are not registered smoother names.
+With the defaults, the SOR family expands to `(SOR_p0p8 SOR_p0p9 GaussSeidel SOR_p1p1 SOR_p1p2)`. The example above widens the range to `(SOR_p0p6 SOR_p0p8 GaussSeidel SOR_p1p2 SOR_p1p4)`.
+
+### Varying smoother parameters across multigrid levels
+
+When configuring `FGAMG` directly, set `smoother` and `coarsestSmoother` to choose the finest and coarsest parameter values. For example:
+
+```
+solver            FGAMG;
+smoother          ICTC_m4;
+coarsestSmoother  ICTC_m1;
+```
+
+FGAMG interpolates through the available parameter values across levels. Both endpoints must belong to the same family: `ICTC`, `ICTCGaussSeidel`, `SOR`, or `DICSOR`. If `coarsestSmoother` is omitted, all levels use `smoother`.
+PCGBandit currently does not implement `coarsestSmootherTune`; its smoother tuning uses the selected smoother on all levels.
 
 ## Examples
 

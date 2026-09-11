@@ -80,6 +80,8 @@ void Foam::ClassName::scalarSmooth						 \
 }										 \
 
 // Instantiate parameterized ICTCGaussSeidel Variants
+MAKE_ICTC_GAUSS_SEIDEL_SMOOTHER(ICTCGaussSeidel_m5, ictc_m5Smoother_);
+MAKE_ICTC_GAUSS_SEIDEL_SMOOTHER(ICTCGaussSeidel_m4p5, ictc_m4p5Smoother_);
 MAKE_ICTC_GAUSS_SEIDEL_SMOOTHER(ICTCGaussSeidel_m4, ictc_m4Smoother_);
 MAKE_ICTC_GAUSS_SEIDEL_SMOOTHER(ICTCGaussSeidel_m3p5, ictc_m3p5Smoother_);
 MAKE_ICTC_GAUSS_SEIDEL_SMOOTHER(ICTCGaussSeidel_m3, ictc_m3Smoother_);

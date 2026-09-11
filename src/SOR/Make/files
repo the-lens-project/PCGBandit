@@ -1,0 +1,4 @@
+SORSmoother/SORSmootherBase.C
+SORSmoother/SORSmoother.C
+DICSOR/DICSORSmoother.C
+LIB = $(FOAM_USER_LIBBIN)/libSOR

@@ -52,6 +52,8 @@ public: 									\
 }; 										\
 }										\
 
+DECLARE_ICTC_GAUSS_SEIDEL_SMOOTHER(ICTCGaussSeidel_m5, ICTC_m5, ictc_m5Smoother_);
+DECLARE_ICTC_GAUSS_SEIDEL_SMOOTHER(ICTCGaussSeidel_m4p5, ICTC_m4p5, ictc_m4p5Smoother_);
 DECLARE_ICTC_GAUSS_SEIDEL_SMOOTHER(ICTCGaussSeidel_m4, ICTC_m4, ictc_m4Smoother_);
 DECLARE_ICTC_GAUSS_SEIDEL_SMOOTHER(ICTCGaussSeidel_m3p5, ICTC_m3p5, ictc_m3p5Smoother_);
 DECLARE_ICTC_GAUSS_SEIDEL_SMOOTHER(ICTCGaussSeidel_m3, ICTC_m3, ictc_m3Smoother_);
