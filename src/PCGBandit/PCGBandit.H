@@ -43,6 +43,7 @@ private:
     word banditAlgorithm_;
     label backstop_;
     label static_;
+    label nGeometricD_;   // mesh geometric dimensionality (2 or 3)
 
     void queryLearner(const scalar initialResidual) const;
     scalar perIterationCostEstimate(const word preconditioner) const;

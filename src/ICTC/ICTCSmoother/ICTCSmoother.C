@@ -40,6 +40,8 @@ Foam::ClassName::ClassName                                                     \
 
 // Instantiates ICTCSmoother Variants
 
+MAKE_PARAMATERIZED_ICTC_SMOOTHER(ICTC_m5,    1e-5);
+MAKE_PARAMATERIZED_ICTC_SMOOTHER(ICTC_m4p5,  pow(10.0, -4.5));
 MAKE_PARAMATERIZED_ICTC_SMOOTHER(ICTC_m4,    1e-4);
 MAKE_PARAMATERIZED_ICTC_SMOOTHER(ICTC_m3p5,  pow(10.0, -3.5));
 MAKE_PARAMATERIZED_ICTC_SMOOTHER(ICTC_m3,    1e-3);

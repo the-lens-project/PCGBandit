@@ -15,9 +15,11 @@ EOF
 gcc -shared -o /tmp/fakeroot.so /tmp/fakeroot.c
 export LD_PRELOAD=/tmp/fakeroot.so
 
-cd /home/openfoam/src/PCGBandit
+cd /home/openfoam/src/ICTC
 wmake libso
-cd ../ICTC
+cd ../SOR
+wmake libso
+cd ../PCGBandit
 wmake libso
 cd ../FGAMG
 wmake libso

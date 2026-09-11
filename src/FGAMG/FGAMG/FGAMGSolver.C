@@ -75,14 +75,28 @@ Foam::FGAMGSolver::FGAMGSolver
         "ICTC_m3",
         "ICTC_m3p5",
         "ICTC_m4",
-	"ICTCGaussSeidel_m0p5",
-	"ICTCGaussSeidel_m1",
-	"ICTCGaussSeidel_m1p5",
-	"ICTCGaussSeidel_m2",
-	"ICTCGaussSeidel_m2p5",
-	"ICTCGaussSeidel_m3",
-	"ICTCGaussSeidel_m3p5",
-	"ICTCGaussSeidel_m4"
+        "ICTC_m4p5",
+        "ICTC_m5",
+        "ICTCGaussSeidel_m0p5",
+        "ICTCGaussSeidel_m1",
+        "ICTCGaussSeidel_m1p5",
+        "ICTCGaussSeidel_m2",
+        "ICTCGaussSeidel_m2p5",
+        "ICTCGaussSeidel_m3",
+        "ICTCGaussSeidel_m3p5",
+        "ICTCGaussSeidel_m4",
+        "ICTCGaussSeidel_m4p5",
+        "ICTCGaussSeidel_m5",
+        "SOR_p0p1", "SOR_p0p2", "SOR_p0p3", "SOR_p0p4", "SOR_p0p5",
+        "SOR_p0p6", "SOR_p0p7", "SOR_p0p8", "SOR_p0p9",
+        "GaussSeidel", // built-in GaussSeidel for omega=1
+        "SOR_p1p1", "SOR_p1p2", "SOR_p1p3", "SOR_p1p4", "SOR_p1p5",
+        "SOR_p1p6", "SOR_p1p7", "SOR_p1p8", "SOR_p1p9",
+        "DICSOR_p0p1", "DICSOR_p0p2", "DICSOR_p0p3", "DICSOR_p0p4", "DICSOR_p0p5",
+        "DICSOR_p0p6", "DICSOR_p0p7", "DICSOR_p0p8", "DICSOR_p0p9",
+        "DICGaussSeidel", // built-in DICGaussSeidel for omega=1
+        "DICSOR_p1p1", "DICSOR_p1p2", "DICSOR_p1p3", "DICSOR_p1p4", "DICSOR_p1p5",
+        "DICSOR_p1p6", "DICSOR_p1p7", "DICSOR_p1p8", "DICSOR_p1p9"
     })
 {
     readControls();
