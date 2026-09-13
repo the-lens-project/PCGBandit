@@ -8,14 +8,14 @@ namespace Foam
 {
 
 // Parse the droptol scalar from a word-encoded smoother name.
-// e.g. "ICTCGaussSeidel_m3p5" -> 10^-3.5, "DICGaussSeidel" -> 1.0 (no suffix)
+// e.g. "ICTCGaussSeidel_m3p5" -> 10^-3.5, "DICGaussSeidel" -> 1.0
 static scalar smootherToDroptol(const word& smootherName) {
     
     label underscoreIdx = smootherName.rfind('_');
     if (underscoreIdx == -1) return 1.0;
 
-    word suffix = smootherName.substr(underscoreIdx + 1); // e.g. "m3p5"
-    word magnitudeStr = suffix.substr(1);                 // remove leading 'm', e.g. "3p5"
+    word suffix = smootherName.substr(underscoreIdx + 1);
+    word magnitudeStr = suffix.substr(1);
 
     label decimalIdx = magnitudeStr.find('p');
     if (decimalIdx == -1) {
@@ -28,48 +28,55 @@ static scalar smootherToDroptol(const word& smootherName) {
     }
 }
 
-// Returns true if the smoother is ICTC-like (i.e. has a droptol parameter).
 static bool smootherIsICTCLike(const word& smootherName) {
-    return smootherName.startsWith("ICTC_") || smootherName == "DIC";
+    return smootherName.startsWith("ICTC_")
+        || smootherName == "ICTC"
+        || smootherName == "DIC";
 }
 
-// Extract the effective (droptol, coarsestDroptol) pair from a GAMG dict.
-// For DIC, both are 1.0. If no coarsestSmoother is specified, defaults
-// to the same droptol as the main smoother.
-static Pair<scalar> effectiveICTCParams (
-    const dictionary& preconDict
-) {
-    word smoother = preconDict.get<word>("smoother");
-
-    if (smoother == "DIC")
-        return Pair<scalar>(1.0, 1.0);
-
-    scalar smootherDroptol = smootherToDroptol(smoother);
-    scalar coarsestDroptol = smootherDroptol;
-
-    if (preconDict.found("coarsestSmoother"))
-        coarsestDroptol = smootherToDroptol(preconDict.get<word>("coarsestSmoother"));
-
-    return Pair<scalar>(smootherDroptol, coarsestDroptol);
+static bool smootherIsICTCGaussSeidelLike(const word& smootherName) {
+    return smootherName.startsWith("ICTCGaussSeidel_")
+        || smootherName == "ICTCGaussSeidel"
+        || smootherName == "DICGaussSeidel";
 }
 
-// Similarity between two ICTC-like smoothers based on log-ratio of droptols.
-// Each component contributes 0.5, giving a score in [0, 1].
-static scalar ICTCSimilarity
-(
-    const scalar droptol_i,
-    const scalar coarsestDroptol_i,
-    const scalar droptol_j,
-    const scalar coarsestDroptol_j
-)
+// Parse the SOR relaxation factor omega from a word-encoded smoother name.
+// e.g. "SOR_p0p5" -> 0.5, "DICSOR_p1p3" -> 1.3, "DICGaussSeidel" -> 1.0 
+static scalar smootherToOmega(const word& smootherName) {
+
+    label underscoreIdx = smootherName.rfind('_');
+    if (underscoreIdx == -1) return 1.0;
+
+    word suffix = smootherName.substr(underscoreIdx + 1);
+    label decimalIdx = suffix.find('p', 1);
+
+    scalar wholePart   = std::stod(suffix.substr(1, decimalIdx - 1));
+    word fracStr       = suffix.substr(decimalIdx + 1);
+    scalar fracDivisor = pow(10.0, scalar(fracStr.size()));
+    return wholePart + std::stod(fracStr) / fracDivisor;
+}
+
+static bool smootherIsSORLike(const word& smootherName) {
+    return smootherName.startsWith("SOR_") 
+        || smootherName == "GaussSeidel";
+}
+
+static bool smootherIsDICSORLike(const word& smootherName) {
+    return smootherName.startsWith("DICSOR_") 
+        || smootherName == "DICGaussSeidel";
+}
+
+
+static scalar omegaSimilarity(const scalar omega_i, const scalar omega_j)
 {
-    scalar logRatioDroptol  = mag(log10(droptol_i / droptol_j));
-    scalar logRatioCoarsest = mag(log10(coarsestDroptol_i / coarsestDroptol_j));
-    return 0.5 / (1.0 + logRatioDroptol) + 0.5 / (1.0 + logRatioCoarsest);
+    return 1.0 / (1.0 + mag(omega_i - omega_j));
 }
 
-// Similarity between two standalone IC preconditioners based on log-ratio of droptols.
-// Score in [0, 1], equal to 1 when droptols are identical.
+static scalar ICTCSimilarity(const scalar droptol_i, const scalar droptol_j)
+{
+    return 1.0 / (1.0 + mag(log10(droptol_i / droptol_j)));
+}
+
 static scalar similarityIC
 (
     const dictionary& preconDict_i,
@@ -102,15 +109,21 @@ static scalar similarityGAMG
     word smoother_j = preconDict_j.get<word>("smoother");
 
     // --- Smoother similarity
-    if (smootherIsICTCLike(smoother_i) && smootherIsICTCLike(smoother_j))
+    if (
+        (smootherIsICTCLike(smoother_i) && smootherIsICTCLike(smoother_j))
+     || (smootherIsICTCGaussSeidelLike(smoother_i) && smootherIsICTCGaussSeidelLike(smoother_j))
+    )
     {
-        Pair<scalar> ICTCParams_i = effectiveICTCParams(preconDict_i);
-        Pair<scalar> ICTCParams_j = effectiveICTCParams(preconDict_j);
-        score += ICTCSimilarity
-        (
-            ICTCParams_i.first(), ICTCParams_i.second(),
-            ICTCParams_j.first(), ICTCParams_j.second()
-        );
+        score += ICTCSimilarity(smootherToDroptol(preconDict_i.get<word>("smoother")),
+                                smootherToDroptol(preconDict_j.get<word>("smoother")));
+    }
+    else if (
+        (smootherIsSORLike(smoother_i) && smootherIsSORLike(smoother_j))
+     || (smootherIsDICSORLike(smoother_i) && smootherIsDICSORLike(smoother_j))
+    )
+    {
+        score += omegaSimilarity(smootherToOmega(preconDict_i.get<word>("smoother")), 
+                                 smootherToOmega(preconDict_j.get<word>("smoother")));
     }
     else if (smoother_i == smoother_j)
     {
@@ -200,8 +213,8 @@ SquareMatrix<scalar> pathMatrix(
     DynamicList<scalar> droptolList;
     DynamicList<label> nCellsList;
     DynamicList<scalar> smootherList;
-    DynamicList<scalar> coarsestSmootherList;
-    
+    DynamicList<scalar> omegaList;
+
     for (label i = 0; i < numConfigs; ++i) {
         const dictionary& dict = preconditionerDicts[i];
         word type = dict.get<word>("preconditioner");
@@ -212,10 +225,10 @@ SquareMatrix<scalar> pathMatrix(
         } else if (type == "GAMG" || type == "FGAMG") {
             nCellsList.append(dict.getOrDefault<label>("nCellsInCoarsestLevel", 10));
             word smoother = dict.get<word>("smoother");
-            if (smootherIsICTCLike(smoother)) {
-                Pair<scalar> pair = effectiveICTCParams(dict);
-                smootherList.append(pair.first());
-                coarsestSmootherList.append(pair.second());
+            if (smootherIsICTCLike(smoother) || smootherIsICTCGaussSeidelLike(smoother)) {
+                smootherList.append(smootherToDroptol(smoother));
+            } else if (smootherIsSORLike(smoother) || smootherIsDICSORLike(smoother)) {
+                omegaList.append(smootherToOmega(smoother));
             }
         }
     }
@@ -223,7 +236,7 @@ SquareMatrix<scalar> pathMatrix(
     dictionary droptolRanks = rankDict(droptolList);
     dictionary nCellsRanks = rankDict(nCellsList);
     dictionary smootherRanks = rankDict(smootherList);
-    dictionary coarsestSmootherRanks = rankDict(coarsestSmootherList);
+    dictionary omegaRanks = rankDict(omegaList);
 
     SquareMatrix<scalar> S(numConfigs, 0.0);
 
@@ -252,16 +265,21 @@ SquareMatrix<scalar> pathMatrix(
                 diff += mag(iNC - jNC);
                 word smoother_i = dict_i.get<word>("smoother");
                 word smoother_j = dict_j.get<word>("smoother");
-                if (smootherIsICTCLike(smoother_i) && smootherIsICTCLike(smoother_j)) {
-                    Pair<scalar> pair_i = effectiveICTCParams(dict_i);
-                    Pair<scalar> pair_j = effectiveICTCParams(dict_j);
+                if (
+                    (smootherIsICTCLike(smoother_i) && smootherIsICTCLike(smoother_j))
+                 || (smootherIsICTCGaussSeidelLike(smoother_i) && smootherIsICTCGaussSeidelLike(smoother_j))
+                ) {
                     diff += mag(
-                        smootherRanks.get<label>(name(pair_i.first())) - 
-                        smootherRanks.get<label>(name(pair_j.first()))
+                        smootherRanks.get<label>(name(smootherToDroptol(smoother_i))) -
+                        smootherRanks.get<label>(name(smootherToDroptol(smoother_j)))
                     );
+                } else if (
+                    (smootherIsSORLike(smoother_i) && smootherIsSORLike(smoother_j))
+                 || (smootherIsDICSORLike(smoother_i) && smootherIsDICSORLike(smoother_j))
+                ) {
                     diff += mag(
-                        coarsestSmootherRanks.get<label>(name(pair_i.second())) - 
-                        coarsestSmootherRanks.get<label>(name(pair_j.second()))
+                        omegaRanks.get<label>(name(smootherToOmega(smoother_i))) -
+                        omegaRanks.get<label>(name(smootherToOmega(smoother_j)))
                     );
                 } else if (smoother_i != smoother_j) {
                     diff++;

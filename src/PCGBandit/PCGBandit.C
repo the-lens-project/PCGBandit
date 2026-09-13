@@ -337,8 +337,6 @@ void Foam::PCGBandit::queryLearner
                 i = floor(scalar(d) * rndGen.sample01<scalar>());
             } else if (banditAlgorithm_ == "ThompsonSampling") {
                 #include "ThompsonSampling.H"
-            } else if (banditAlgorithm_ == "simTsallisINF") {
-                #include "simTsallisINF.H"
             } else if (banditAlgorithm_ == "SpeKL") {
                 #include "SpeKL.H"
             } else {
@@ -396,10 +394,15 @@ namespace Foam
         } else if (smoother == "symGaussSeidel") {
             c = scalar(4 * nnzL + 2 * nCells);
         } else {
-            if (smoother == "GaussSeidel" || smoother == "DICGaussSeidel") {
+            if (smoother == "GaussSeidel"
+                || smoother == "DICGaussSeidel"
+                || smoother.find("SOR_") == 0
+                || smoother.find("DICSOR_") == 0) {
                 c += scalar(2 * nnzL + nCells);
             }
-            if (smoother == "DIC" || smoother == "DICGaussSeidel") {
+            if (smoother == "DIC"
+                || smoother == "DICGaussSeidel" 
+                || smoother.find("DICSOR_") == 0) {
                 c += scalar(4 * nnzL + nCells);
             }
             if (c == 0.0) {

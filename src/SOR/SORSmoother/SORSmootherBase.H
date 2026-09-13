@@ -22,6 +22,15 @@ class SORSmootherBase
         //- Successive over-relaxation factor
         const scalar omega_;
 
+        //- omega/diag, precomputed once here at construction rather than
+        //- re-derived (via a division and an extra multiply-add) on every
+        //- cell of every sweep of every application. The matrix and omega
+        //- are both fixed for the lifetime of the smoother, so this and the
+        //- (1-omega) blend factor are the only omega-dependent quantities
+        //- the sweep needs; mirrors the reciprocal-diagonal caching already
+        //- used by ICTCSmootherBase/DICPreconditioner.
+        solveScalarField rDiagOmega_;
+
 
 public:
 
@@ -52,7 +61,8 @@ public:
             const lduInterfaceFieldPtrsList& interfaces,
             const direction cmpt,
             const label nSweeps,
-            const scalar omega
+            const scalar omega,
+            const solveScalarField& rDiagOmega
         );
 
         //- Smooth the solution for a given number of sweeps

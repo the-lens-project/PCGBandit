@@ -25,8 +25,18 @@ Foam::SORSmootherBase::SORSmootherBase
         interfaces,
         solverControls
     ),
-    omega_(omega)
-{}
+    omega_(omega),
+    rDiagOmega_(matrix.diag().size())
+{
+    const scalar* const __restrict__ diagPtr = matrix.diag().begin();
+    solveScalar* __restrict__ rDiagOmegaPtr = rDiagOmega_.begin();
+
+    const label nCells = rDiagOmega_.size();
+    for (label celli = 0; celli < nCells; ++celli)
+    {
+        rDiagOmegaPtr[celli] = omega / diagPtr[celli];
+    }
+}
 
 
 void Foam::SORSmootherBase::smooth
@@ -38,7 +48,8 @@ void Foam::SORSmootherBase::smooth
     const lduInterfaceFieldPtrsList& interfaces,
     const direction cmpt,
     const label nSweeps,
-    const scalar omega
+    const scalar omega,
+    const solveScalarField& rDiagOmega
 )
 {
     solveScalar* __restrict__ psiPtr = psi.begin();
@@ -48,7 +59,7 @@ void Foam::SORSmootherBase::smooth
     solveScalarField& bPrime = matrix.work(nCells);
     solveScalar* __restrict__ bPrimePtr = bPrime.begin();
 
-    const scalar* const __restrict__ diagPtr = matrix.diag().begin();
+    const solveScalar* const __restrict__ rDiagOmegaPtr = rDiagOmega.begin();
     const scalar* const __restrict__ upperPtr = matrix.upper().begin();
     const scalar* const __restrict__ lowerPtr = matrix.lower().begin();
 
@@ -57,8 +68,8 @@ void Foam::SORSmootherBase::smooth
     const label* const __restrict__ ownerStartPtr =
         matrix.lduAddr().ownerStartAddr().begin();
 
-    // This is the OpenFOAM Gauss-Seidel sweep with point-wise relaxation
-    // applied before the updated value is used by subsequent rows.
+    const solveScalar oneMinusOmega = 1 - omega;
+
     for (label sweep = 0; sweep < nSweeps; ++sweep)
     {
         bPrime = source;
@@ -100,9 +111,7 @@ void Foam::SORSmootherBase::smooth
                 psii -= upperPtr[facei]*psiPtr[upperAddrPtr[facei]];
             }
 
-            psii =
-                psiPtr[celli]
-              + omega*(psii/diagPtr[celli] - psiPtr[celli]);
+            psii = oneMinusOmega*psiPtr[celli] + rDiagOmegaPtr[celli]*psii;
 
             for (label facei = faceStart; facei < faceEnd; ++facei)
             {
@@ -132,7 +141,8 @@ void Foam::SORSmootherBase::smooth
         interfaces_,
         cmpt,
         nSweeps,
-        omega_
+        omega_,
+        rDiagOmega_
     );
 }
 
@@ -154,7 +164,8 @@ void Foam::SORSmootherBase::scalarSmooth
         interfaces_,
         cmpt,
         nSweeps,
-        omega_
+        omega_,
+        rDiagOmega_
     );
 }
 
