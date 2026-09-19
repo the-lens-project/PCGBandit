@@ -2,7 +2,7 @@
                 Functions for entropic mirror descent updates.
 \*---------------------------------------------------------------------------*/
 
-#include "MirrorDescent.H"
+#include "mirrorDescent.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 

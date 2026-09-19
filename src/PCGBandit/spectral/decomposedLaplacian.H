@@ -1,9 +1,9 @@
 /*---------------------------------------------------------------------------*\
-                    Class DecomposedLaplacian Declaration
+                    Class decomposedLaplacian Declaration
 \*---------------------------------------------------------------------------*/
 
-#ifndef DecomposedLaplacian_H
-#define DecomposedLaplacian_H
+#ifndef decomposedLaplacian_H
+#define decomposedLaplacian_H
 #include "DiagonalMatrix.H"
 #include "SquareMatrix.H"
 #include "LLTMatrix.H"
@@ -14,10 +14,10 @@ namespace Foam
 {
 
 /*---------------------------------------------------------------------------*\
-                        Class DecomposedLaplacian Declaration
+                        Class decomposedLaplacian Declaration
 \*---------------------------------------------------------------------------*/
 
-class DecomposedLaplacian
+class decomposedLaplacian
 {
 private:
 
@@ -46,11 +46,11 @@ public:
 
     // Constructors
 
-        DecomposedLaplacian(const SquareMatrix<scalar>& similarityMatrix);
+        decomposedLaplacian(const SquareMatrix<scalar>& similarityMatrix);
 
     // Destructor
 
-        ~DecomposedLaplacian() = default;
+        ~decomposedLaplacian() = default;
 
     // Member Functions
 

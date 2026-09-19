@@ -2,7 +2,8 @@
         Functions to build matrices of preconditioner similarities.
 \*---------------------------------------------------------------------------*/
 
-#include "Similarity.H"
+#include "similarityMatrix.H"
+#include "configurationSpace.H"
 
 namespace Foam
 {
@@ -10,7 +11,8 @@ namespace Foam
 // Parse the droptol scalar from a word-encoded smoother name.
 // e.g. "ICTCGaussSeidel_m3p5" -> 10^-3.5, "DICGaussSeidel" -> 1.0
 static scalar smootherToDroptol(const word& smootherName) {
-    
+    if (smootherName == "DICSOR_p1p0") return 1.0;
+
     label underscoreIdx = smootherName.rfind('_');
     if (underscoreIdx == -1) return 1.0;
 
@@ -37,7 +39,8 @@ static bool smootherIsICTCLike(const word& smootherName) {
 static bool smootherIsICTCGaussSeidelLike(const word& smootherName) {
     return smootherName.startsWith("ICTCGaussSeidel_")
         || smootherName == "ICTCGaussSeidel"
-        || smootherName == "DICGaussSeidel";
+        || smootherName == "DICGaussSeidel"
+        || smootherName == "DICSOR_p1p0";
 }
 
 // Parse the SOR relaxation factor omega from a word-encoded smoother name.
@@ -145,6 +148,40 @@ static scalar similarityGAMG
     return score / 3.0;
 }
 
+// Similarity along the three subspace-initialization axes, in [0, 1].
+static scalar subspaceSimilarity
+(
+    const dictionary& preconDict_i,
+    const dictionary& preconDict_j
+)
+{
+    label lenHistory_i = preconDict_i.getOrDefault<label>("lenHistory", 0);
+    label lenHistory_j = preconDict_j.getOrDefault<label>("lenHistory", 0);
+    label numProbes_i  = preconDict_i.getOrDefault<label>("numProbes", 4);
+    label numProbes_j  = preconDict_j.getOrDefault<label>("numProbes", 4);
+    scalar decay_i     = preconDict_i.getOrDefault<scalar>("decayRate", 0);
+    scalar decay_j     = preconDict_j.getOrDefault<scalar>("decayRate", 0);
+
+    const bool off_i = subspaceOff(preconDict_i);
+    const bool off_j = subspaceOff(preconDict_j);
+
+    if (off_i || off_j) return (off_i && off_j) ? 1.0 : 0.0;
+
+    if ((decay_i > 0) != (decay_j > 0)) return 0.0;
+
+    scalar logRatioNumProbes  = mag(log2(scalar(numProbes_i)/scalar(numProbes_j)));
+
+    const scalar depth_i =
+        (decay_i > 0) ? 1.0/max(SMALL, 1.0 - decay_i) : scalar(lenHistory_i);
+    const scalar depth_j =
+        (decay_j > 0) ? 1.0/max(SMALL, 1.0 - decay_j) : scalar(lenHistory_j);
+
+    scalar logRatioDepth = mag(log2(depth_i/depth_j));
+
+    return 0.5/(1.0 + logRatioDepth) + 0.5/(1.0 + logRatioNumProbes);
+}
+
+
 // Build the full similarity matrix over all preconditioner configurations.
 // S[i][j] is the similarity between arm i and arm j, in [0, 1].
 // Cross-type similarity (IC vs GAMG) is always 0.
@@ -178,6 +215,8 @@ SquareMatrix<scalar> similarityMatrix(
             } else if (iIC && jIC) {
                 similarity = similarityIC(dict_i, dict_j);
             }
+
+            similarity *= subspaceSimilarity(dict_i, dict_j);
 
             S(i, j) = similarity;
             S(j, i) = similarity;
@@ -214,9 +253,15 @@ SquareMatrix<scalar> pathMatrix(
     DynamicList<label> nCellsList;
     DynamicList<scalar> smootherList;
     DynamicList<scalar> omegaList;
+    DynamicList<label> lenHistoryList;
+    DynamicList<label> numProbesList;
+    DynamicList<scalar> decayRateList;
 
     for (label i = 0; i < numConfigs; ++i) {
         const dictionary& dict = preconditionerDicts[i];
+        lenHistoryList.append(dict.getOrDefault<label>("lenHistory", 0));
+        numProbesList.append(dict.getOrDefault<label>("numProbes", 4));
+        decayRateList.append(dict.getOrDefault<scalar>("decayRate", 0));
         word type = dict.get<word>("preconditioner");
         if (type == "ICTC") {
             droptolList.append(dict.get<scalar>("droptol"));
@@ -227,7 +272,8 @@ SquareMatrix<scalar> pathMatrix(
             word smoother = dict.get<word>("smoother");
             if (smootherIsICTCLike(smoother) || smootherIsICTCGaussSeidelLike(smoother)) {
                 smootherList.append(smootherToDroptol(smoother));
-            } else if (smootherIsSORLike(smoother) || smootherIsDICSORLike(smoother)) {
+            }
+            if (smootherIsSORLike(smoother) || smootherIsDICSORLike(smoother)) {
                 omegaList.append(smootherToOmega(smoother));
             }
         }
@@ -237,6 +283,9 @@ SquareMatrix<scalar> pathMatrix(
     dictionary nCellsRanks = rankDict(nCellsList);
     dictionary smootherRanks = rankDict(smootherList);
     dictionary omegaRanks = rankDict(omegaList);
+    dictionary lenHistoryRanks = rankDict(lenHistoryList);
+    dictionary numProbesRanks = rankDict(numProbesList);
+    dictionary decayRateRanks = rankDict(decayRateList);
 
     SquareMatrix<scalar> S(numConfigs, 0.0);
 
@@ -250,6 +299,21 @@ SquareMatrix<scalar> pathMatrix(
             const dictionary& dict_j = preconditionerDicts[j];
             scalar adjacent = 0.0;
             label diff = 0;
+
+            auto axisDiff =
+                [&](const dictionary& ranks, const word& key, auto defaultValue)
+                {
+                    typedef decltype(defaultValue) axisType;
+                    return mag
+                    (
+                        ranks.get<label>(name(dict_i.getOrDefault<axisType>(key, defaultValue)))
+                      - ranks.get<label>(name(dict_j.getOrDefault<axisType>(key, defaultValue)))
+                    );
+                };
+
+            diff += axisDiff(lenHistoryRanks, "lenHistory", label(0));
+            diff += axisDiff(numProbesRanks,  "numProbes",  label(4));
+            diff += axisDiff(decayRateRanks,  "decayRate",  scalar(0));
 
             word type_i = dict_i.get<word>("preconditioner");
             word type_j = dict_j.get<word>("preconditioner");

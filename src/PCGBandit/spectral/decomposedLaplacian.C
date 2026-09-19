@@ -1,8 +1,8 @@
 /*---------------------------------------------------------------------------*\
-                    Class DecomposedLaplacian Implementation
+                    Class decomposedLaplacian Implementation
 \*---------------------------------------------------------------------------*/
 
-#include "DecomposedLaplacian.H"
+#include "decomposedLaplacian.H"
 #include "EigenMatrix.H"
 #include "LLTMatrix.H"
 #include "SquareMatrix.H"
@@ -13,7 +13,7 @@ namespace Foam
 {
 
 // * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * * //
-DecomposedLaplacian::DecomposedLaplacian(const SquareMatrix<scalar>& similarityMatrix)
+decomposedLaplacian::decomposedLaplacian(const SquareMatrix<scalar>& similarityMatrix)
 :
     d_(similarityMatrix.n())
 {
@@ -59,7 +59,7 @@ DecomposedLaplacian::DecomposedLaplacian(const SquareMatrix<scalar>& similarityM
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
-scalar Foam::DecomposedLaplacian::dEff(
+scalar Foam::decomposedLaplacian::dEff(
     const scalar mu
 ) const
 {
@@ -86,7 +86,7 @@ scalar Foam::DecomposedLaplacian::dEff(
 
 }
 
-LLTMatrix<scalar> Foam::DecomposedLaplacian::cholLambdaPlusVPi(
+LLTMatrix<scalar> Foam::decomposedLaplacian::cholLambdaPlusVPi(
     const scalarField& Pi,
     const scalar mu
 ) const
@@ -118,7 +118,7 @@ LLTMatrix<scalar> Foam::DecomposedLaplacian::cholLambdaPlusVPi(
 
 }
 
-scalarField Foam::DecomposedLaplacian::DOptimalDesign(
+scalarField Foam::decomposedLaplacian::DOptimalDesign(
     const scalar mu
 ) const
 {
@@ -203,7 +203,7 @@ scalarField Foam::DecomposedLaplacian::DOptimalDesign(
     
 }
 
-LLTMatrix<scalar> Foam::DecomposedLaplacian::cholLaplacianPlusPi(
+LLTMatrix<scalar> Foam::decomposedLaplacian::cholLaplacianPlusPi(
     const scalarField& Pi,
     const scalar mu
 ) const
@@ -215,7 +215,7 @@ LLTMatrix<scalar> Foam::DecomposedLaplacian::cholLaplacianPlusPi(
     return LLTMatrix<scalar>(RegPi);
 }
 
-scalarField Foam::DecomposedLaplacian::getHat(
+scalarField Foam::decomposedLaplacian::getHat(
     const scalarField& Pi,
     const scalar mu,
     const label row
@@ -231,7 +231,7 @@ scalarField Foam::DecomposedLaplacian::getHat(
     
 }
 
-Pair<scalarField> Foam::DecomposedLaplacian::getHatAndBonus(
+Pair<scalarField> Foam::decomposedLaplacian::getHatAndBonus(
     const scalarField& Pi,
     const scalar mu,
     const label row

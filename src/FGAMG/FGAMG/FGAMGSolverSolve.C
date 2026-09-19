@@ -526,16 +526,13 @@ void Foam::FGAMGSolver::initVcycle
     }
 }
 
-// Family of a parameterized smoother, used to validate finest/coarsest
-// interpolation bounds. Each family (ICTC, ICTCGaussSeidel, SOR, DICSOR) occupies
-// a contiguous ordered block of smootherList and may be interpolated within;
-// standard smoothers form singleton families that cannot be interpolated.
+// Interpolate only within a parameterized smoother family.
 static Foam::word smootherFamily(const Foam::word& s)
 {
     if (s.find("ICTCGaussSeidel_") == 0)                 return "ICTCGaussSeidel";
     if (s.find("ICTC_") == 0)                            return "ICTC";
-    if (s.find("DICSOR_") == 0 || s == "DICGaussSeidel") return "DICSOR";
-    if (s.find("SOR_") == 0 || s == "GaussSeidel")       return "SOR";
+    if (s.find("DICSOR_") == 0)                         return "DICSOR";
+    if (s.find("SOR_") == 0)                            return "SOR";
     return s;
 }
 
@@ -543,53 +540,60 @@ static Foam::word smootherFamily(const Foam::word& s)
 Foam::List<Foam::word> Foam::FGAMGSolver::findSmootherRange()
 const
 {
-
-    // Retrieves finest & coarsest level drop tolerances if specified in solution file; otherwise defaults to n/A
     const word finestSmoother(controlDict_.lookup("smoother"));
-    const word coarsestSmoother = controlDict_.getOrDefault("coarsestSmoother", finestSmoother);
+    const word coarsestSmoother = controlDict_.getOrDefault<word>
+    (
+        "coarsestSmoother", finestSmoother
+    );
 
-    // Checks that two different drop tolerance bounds were specified
-    if (coarsestSmoother != finestSmoother) {
-
-	// Finds index bounds on list of smoother parameterizations
-	label startingIndex = smootherList.find(finestSmoother);
-	label endingIndex = smootherList.find(coarsestSmoother);
-	bool reversedBounds = false;
-
-
-	// Throws error if improper drop tolerance bounds were specified
-	if (startingIndex == -1 || endingIndex == -1) {
-        	FatalErrorInFunction << "Improper drop tolerance specified in solution file. \n"
-		<< "Please retry with selections from " << smootherList  
-		<< " for both finest and coarsest levels." << exit(FatalError);
-	}
-
-	// Coarsest and finest smoother must belong to the same parameterized
-	// family (ICTC, ICTCGaussSeidel, SOR or DICSOR) to interpolate between.
-	if (smootherFamily(smootherList[startingIndex]) != smootherFamily(smootherList[endingIndex])) {
-        	FatalErrorInFunction << "Smoother mismatch specified in solution file. \n"
-		<< "Please retry with selections from " << smootherList  
-		<< " that belong to the same family." << exit(FatalError);
-	}
-	// Flips bounds if specified in unexpected order
-	else if (startingIndex > endingIndex) {
-		Swap(startingIndex, endingIndex);
-		reversedBounds = true;
-	}
-
-	// Creates sub-list containing smoothers in the specified bounds
-	SubList<word> availableSmoothers(smootherList, endingIndex-startingIndex+1, startingIndex);
-
-	// Reverses the list in the case in which bounds were specified in unexpected order
-	if (reversedBounds) {
-		reverse(availableSmoothers);
-	}
-
-	return List<word>(availableSmoothers);
+    if (coarsestSmoother == finestSmoother)
+    {
+        return List<word>();
     }
 
-    // Returns empty list if finest and coarsest drop tolerances not specified
-    return List<word>();
+    // Locate built-in endpoints at omega=1 without changing their implementation.
+    const auto smootherIndex = [&](word name)
+    {
+        if (name == "GaussSeidel") name = "SOR_p1p0";
+        else if (name == "DICGaussSeidel") name = "DICSOR_p1p0";
+        return smootherList.find(name);
+    };
+    const label startingIndex = smootherIndex(finestSmoother);
+    const label endingIndex = smootherIndex(coarsestSmoother);
+
+    if (startingIndex == -1 || endingIndex == -1)
+    {
+        FatalErrorInFunction
+            << "Invalid smoother interpolation bounds. Select from "
+            << smootherList << ", GaussSeidel or DICGaussSeidel."
+            << exit(FatalError);
+    }
+
+    if
+    (
+        smootherFamily(smootherList[startingIndex])
+     != smootherFamily(smootherList[endingIndex])
+    )
+    {
+        FatalErrorInFunction
+            << "Finest and coarsest smoothers must belong to the same family."
+            << exit(FatalError);
+    }
+
+    if (startingIndex == endingIndex)
+    {
+        return List<word>({finestSmoother, coarsestSmoother});
+    }
+
+    const label step = startingIndex < endingIndex ? 1 : -1;
+    List<word> availableSmoothers(mag(endingIndex - startingIndex) + 1);
+    forAll(availableSmoothers, i)
+    {
+        availableSmoothers[i] = smootherList[startingIndex + step*i];
+    }
+    availableSmoothers.first() = finestSmoother;
+    availableSmoothers.last() = coarsestSmoother;
+    return availableSmoothers;
 }
 
 void Foam::FGAMGSolver::selectSmootherPerLevel

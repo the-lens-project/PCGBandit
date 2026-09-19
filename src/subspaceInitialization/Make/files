@@ -1,0 +1,6 @@
+contextWindow.C
+EWMASketch.C
+subspaceInitializer.C
+siPCG/siPCG.C
+
+LIB = $(FOAM_USER_LIBBIN)/libsubspaceInitialization

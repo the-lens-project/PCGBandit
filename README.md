@@ -1,191 +1,250 @@
 # PCGBandit
 
-Package for tuning PCG preconditioners in OpenFOAM simulations on-the-fly (PCGBandit).
-In addition, this repository implements the following:
+PCGBandit tunes PCG preconditioners during OpenFOAM simulations. The package includes:
 
-* An implementation of a thresholded incomplete Cholesky preconditioner (`ICTC`) with a customizable drop tolerance parameter (`droptol`).
-* An implementation of GAMG (`FGAMG`) that precomputes ICTC (and DIC) smoothing factors before solving the system rather than at each iteration; it also allows the ICTC drop tolerance to vary across multigrid levels.
-* Parameterized successive over-relaxation (`SOR`) smoothers, plus combined DIC/SOR (`DICSOR`) smoothers.
+- `ICTC`: incomplete Cholesky with a configurable drop tolerance.
+- `FGAMG`: multigrid with cached ICTC/DIC smoothing factors and smoother parameters that can vary across levels.
+- `SOR` and `DICSOR`: parameterized SOR smoothers, with optional DIC smoothing before SOR.
+- `subspaceInitialization`: initial-guess corrections from previous iterates, including the standalone `siPCG` solver.
+- `SpectralINF`: a bandit algorithm that shares feedback between similar configurations.
 
 ## Setup
 
-### Docker setup
+### Docker
 
-Run `sh launch.sh` from the repository root to pull the OpenFOAM Docker image, build all four libraries (`ICTC`, `SOR`, `PCGBandit`, `FGAMG`), and drop into an interactive container shell.
-The repository is mounted at `/home/openfoam` inside the container.
+Run `bash launch.sh` from the repository root. It pulls the OpenFOAM image, builds all five libraries, and opens a shell with the repository mounted at `/home/openfoam`.
 
-### Building manually
+### Manual build
 
-From an OpenFOAM-sourced environment:
-```
+From the repository root in an OpenFOAM-sourced environment:
+
+```sh
 cd src/ICTC && wmake libso && cd ../..
 cd src/SOR && wmake libso && cd ../..
+cd src/subspaceInitialization && wmake libso && cd ../..
 cd src/PCGBandit && wmake libso && cd ../..
 cd src/FGAMG && wmake libso && cd ../..
 ```
 
-## Configuring your case
+## Configuring a case
 
-Add the following line to your OpenFOAM case directory's `system/controlDict` file:
-```
-libs ( libICTC.so libSOR.so libFGAMG.so libPCGBandit.so );
+To enable all components, add this to `system/controlDict`:
+
+```foam
+libs ( libICTC.so libSOR.so libsubspaceInitialization.so libFGAMG.so libPCGBandit.so );
 ```
 
-Then, for any PCG solver to be tuned, replace its `solver` and `preconditioner` specifications in `fvSolution` with PCGBandit settings.
-A minimal configuration is:
-```
+`libPCGBandit` automatically loads its required `libsubspaceInitialization` dependency. Load `libICTC` and `libSOR` when selecting their preconditioners or smoothers. Load `libFGAMG` before `libPCGBandit` to use FGAMG for multigrid candidates; otherwise PCGBandit uses built-in GAMG.
+
+In the relevant `system/fvSolution` solver entry, keep the existing tolerances and replace `solver` and `preconditioner` with:
+
+```foam
 solver          PCGBandit;
 preconditioner  separate;
 ```
-This tunes over the `DIC` preconditioner only (equivalent to standard PCG with DIC). The `separate` setting for `preconditioner` specifies tuning each linear system in the simulation separately; the alternative option is `joint`, with custom groupings possible using other names.
-Set `randomSeed` in `controlDict` (not `fvSolution`) to control the random seed.
 
-### Tuning the ICTC preconditioner drop tolerance
+This selects only DIC until more candidates are configured. `separate` maintains a bandit per mesh region and field; `joint` shares one bandit, and any other name defines a custom group. The first solver dictionary in a group defines its candidate configurations, so use consistent tuning settings within each group.
 
-Tuning the ICTC preconditioner drop tolerance is controlled by the following parameters:
-| Keyword | Default | Description |
-|---------|---------|-------------|
-| `numDroptols` | `0` | number of drop tolerances to tune over |
-| `minLogDroptol` | `-4` | smallest drop tolerance (10<sup>-4</sup>) |
-| `maxLogDroptol` | `-0.5` | largest drop tolerance (10<sup>-0.5</sup>) |
+Set `randomSeed` in `controlDict` to control random sampling.
 
-The solver will consider `numDroptols` different drop tolerances, evenly-spaced in log-space between `minLogDroptol` and `maxLogDroptol`.
-For example, with `numDroptols 8; minLogDroptol -4; maxLogDroptol -0.5`, the drop tolerances will be approximately: `(0.0001 0.000316 0.001 0.00316 0.01 0.0316 0.1 0.316)`.
-The `ICTC` preconditioner may also be used on its own as a preconditioner for PCG by replacing (e.g.) `preconditioner DIC;` with `preconditioner ICTC;` in the relevant `fvSolution` file.
+### Solver controls
 
-### Tuning multigrid parameters
-
-To tune over GAMG configurations, add one or more of the nine `<param>Tune` keywords listed below.
-Each `<param>Tune` keyword accepts either `yes` (use built-in defaults), `no` (default), or an explicit list of values:
-```
-solver          PCGBandit;
-preconditioner  separate;
-smootherTune    yes;            // default: (GaussSeidel DIC DICGaussSeidel symGaussSeidel)
-nCellsInCoarsestLevelTune yes;  // default: (10 100 1000)
-mergeLevelsTune yes;            // default: (1 2)
-numDroptols     8;              // number of ICTC drop tolerances to tune
-```
-
-The available `<param>Tune` keywords and their defaults are:
-| Keyword | Default values |
-|---------|---------------|
-| `smootherTune` | `GaussSeidel DIC DICGaussSeidel symGaussSeidel` |
-| `agglomeratorTune` | `faceAreaPair algebraicPair` |
-| `directSolveCoarsestTune` | `no yes` |
-| `nCellsInCoarsestLevelTune` | `10 100 1000` |
-| `mergeLevelsTune` | `1 2` |
-| `nPreSweepsTune` | `0 2` |
-| `nPostSweepsTune` | `1 2` |
-| `nFinestSweepsTune` | `2` |
-| `nVcyclesTune` | `1 2` |
-
-Additional optional keywords (in addition to regular PCG keywords):
-| Keyword | Default | Description |
-|---------|---------|-------------|
-| `residualContext` | `no` | whether to tune the `Final` solve in a correction loop separately |
-| `DICTune` | `yes` | include `DIC` as a candidate preconditioner |
-| `cacheAgglomeration` | `yes` (auto `no` if tuning agglomerator/nCellsInCoarsestLevel/mergeLevels) | GAMG agglomeration caching |
-| `banditAlgorithm` | `TsallisINF` | bandit algorithm (`TsallisINF` or `ThompsonSampling`) |
-| `lossEstimator` | `RV` | loss estimator for `TsallisINF` (`RV` or `IW`); unused by `ThompsonSampling` |
-| `backstop` | `-1` | backstop iteration limit (`-1` = auto) |
-| `static` | `-1` | fixed zero-based candidate preconditioner index (`-1` = off) |
-| `deterministic` | `no` | deterministic mode for reproducible runs |
-
-When tuning GAMG smoothers, you may also specify `ICTC` or `ICTCGaussSeidel` as options in `smootherTune`; this approach is best-used with `FGAMG` loaded.
-These automatically expand over the selected drop tolerances.
-Drop tolerances are specified using logarithmic suffixes and controlled by:
+These supplement the usual PCG controls:
 
 | Keyword | Default | Description |
 |---------|---------|-------------|
-| `numSmootherDroptols` | `4` | target number of drop tolerances to tune over |
-| `minSmootherLogDroptol` | `m4` | smallest drop tolerance for ICTC smoothers (10<sup>-4</sup>) |
-| `maxSmootherLogDroptol` | `m0p5` | largest drop tolerance for ICTC smoothers (10<sup>-0.5</sup>) |
+| `DICTune` | `yes` | Include DIC as a candidate. |
+| `residualContext` | `no` | Use a separate bandit for solves with `relTol 0`. |
+| `banditAlgorithm` | `TsallisINF` | `TsallisINF`, `SpectralINF`, or `ThompsonSampling`. |
+| `lossEstimator` | `RV` | `RV` or `IW` for TsallisINF; unused by the other algorithms. |
+| `deterministic` | `no` | Use estimated operation cost instead of elapsed solver time as feedback. |
+| `randomUniform` | `no` | Choose candidates uniformly without learning. |
+| `static` | `-1` | Fix a zero-based candidate index; `-1` enables selection. |
+| `backstop` | `-1` | DIC fallback: `-1` chooses a threshold from estimated costs; `0` disables fallback; a positive value sets the additional iteration budget. |
+| `cacheAgglomeration` | `yes` | Cache multigrid agglomeration. Disabled when tuning multiple agglomeration settings, except with a fixed `static` candidate. |
 
-The available suffix values and their corresponding drop tolerances are:
-| Suffix | Drop tolerance |
-|--------|----------------|
-| `m5` | 10<sup>-5</sup> = 0.00001 |
-| `m4p5` | 10<sup>-4.5</sup> ≈ 0.0000316 |
-| `m4` | 10<sup>-4</sup> = 0.0001 |
-| `m3p5` | 10<sup>-3.5</sup> ≈ 0.000316 |
-| `m3` | 10<sup>-3</sup> = 0.001 |
-| `m2p5` | 10<sup>-2.5</sup> ≈ 0.00316 |
-| `m2` | 10<sup>-2</sup> = 0.01 |
-| `m1p5` | 10<sup>-1.5</sup> ≈ 0.0316 |
-| `m1` | 10<sup>-1</sup> = 0.1 |
-| `m0p5` | 10<sup>-0.5</sup> ≈ 0.316 |
+### ICTC drop tolerance
 
-With the defaults, each ICTC smoother family expands over `(m4 m3 m2 m1)`. Set `numSmootherDroptols 8` to select all eight suffixes within the default bounds, or set `minSmootherLogDroptol m5` and `numSmootherDroptols 10` to select all ten supported suffixes.
+| Keyword | Default | Description |
+|---------|---------|-------------|
+| `numDroptols` | `0` | Number of ICTC preconditioner candidates. |
+| `minLogDroptol` | `-4` | Base-10 logarithm of the smallest drop tolerance. |
+| `maxLogDroptol` | `-0.5` | Base-10 logarithm of the largest drop tolerance. |
 
-Both the drop-tolerance grid and the SOR grid below use an integer stride through their suffix lists. The requested count is a target: the actual count may differ, and the upper bound may be omitted. For example, the default drop-tolerance grid skips `m0p5`.
+Tolerances are evenly spaced in log space. With eight candidates and the default bounds, they are approximately `(0.0001 0.000316 0.001 0.00316 0.01 0.0316 0.1 0.316)`. A single candidate uses `minLogDroptol`.
 
-### Tuning SOR relaxation factors
+To use ICTC directly with PCG:
 
-Add `SOR` or `DICSOR` to an explicit `smootherTune` list to tune the SOR relaxation factor. `DICSOR` applies DIC smoothing followed by SOR smoothing.
-For example:
-
+```foam
+solver PCG;
+preconditioner
+{
+    preconditioner ICTC;
+    droptol        1e-3;
+}
 ```
-smootherTune       (GaussSeidel SOR DICGaussSeidel DICSOR);
+
+### Multigrid tuning
+
+Each keyword below accepts `yes` to use its default grid, `no` to leave that axis untuned, or an explicit list. The chosen axes form a Cartesian product of multigrid candidates, added alongside DIC and ICTC candidates.
+
+```foam
+smootherTune                 yes;
+nCellsInCoarsestLevelTune    yes;
+mergeLevelsTune             yes;
+numDroptols                 8;
+```
+
+| Keyword | Grid used by `yes` |
+|---------|--------------------|
+| `smootherTune` | `(GaussSeidel DIC DICGaussSeidel symGaussSeidel)` |
+| `agglomeratorTune` | `(faceAreaPair algebraicPair)` |
+| `directSolveCoarsestTune` | `(no yes)` |
+| `nCellsInCoarsestLevelTune` | `(10 100 1000)` |
+| `mergeLevelsTune` | `(1 2)` |
+| `nPreSweepsTune` | `(0 2)` |
+| `nPostSweepsTune` | `(1 2)` |
+| `nFinestSweepsTune` | `(2)` |
+| `nVcyclesTune` | `(1 2)` |
+
+Without smoother tuning, multigrid candidates use `DICGaussSeidel`. Explicit `nCellsInCoarsestLevelTune` list values are clamped to the minimum local cell count across ranks, with a lower bound of one.
+
+#### ICTC smoothers
+
+Include `ICTC` or `ICTCGaussSeidel` in an explicit `smootherTune` list to expand that family over drop tolerances. FGAMG caches their factors between smoothing calls.
+
+| Keyword | Default | Description |
+|---------|---------|-------------|
+| `numSmootherDroptols` | `4` | Target number of suffixes to select. |
+| `minSmootherLogDroptol` | `m4` | Lower drop-tolerance bound, encoded as a suffix. |
+| `maxSmootherLogDroptol` | `m0p5` | Upper drop-tolerance bound. |
+
+Suffixes range from `m5` to `m0p5` in half-decade steps: `m5`, `m4p5`, `m4`, ..., `m1`, `m0p5`. For example, `ICTC_m3p5` uses a drop tolerance of 10^-3.5. The default selection is `(m4 m3 m2 m1)`; `numSmootherDroptols 8` selects all suffixes within the default bounds.
+
+The ICTC and SOR smoother grids use an integer stride through their suffix lists. The requested count is a target: the actual count can differ, and the upper bound can be omitted.
+
+#### SOR smoothers
+
+Include `SOR` or `DICSOR` in `smootherTune` to expand over relaxation factors:
+
+```foam
+smootherTune       (SOR DICSOR);
 minSmootherOmega   p0p6;
 maxSmootherOmega   p1p4;
 numSmootherOmegas  5;
 ```
 
-The SOR tuning controls are:
+| Keyword | Default | Description |
+|---------|---------|-------------|
+| `minSmootherOmega` | `p0p8` | Lower relaxation-factor bound. |
+| `maxSmootherOmega` | `p1p2` | Upper relaxation-factor bound. |
+| `numSmootherOmegas` | `5` | Target number of suffixes to select. |
+
+Available factors run from `p0p1` to `p1p9` in steps of 0.1. The example selects `(p0p6 p0p8 p1p0 p1p2 p1p4)`; the default grid is `(p0p8 p0p9 p1p0 p1p1 p1p2)`.
+
+`SOR_p1p0` and `DICSOR_p1p0` use the SOR implementations at omega=1. `GaussSeidel` and `DICGaussSeidel` retain the built-in implementations and remain separate candidates if explicitly included. FGAMG and PCGBandit do not link `libSOR` automatically.
+
+#### Smoother parameters across levels
+
+When configuring FGAMG directly:
+
+```foam
+solver             FGAMG;
+smoother           ICTC_m4;
+coarsestSmoother    ICTC_m1;
+```
+
+FGAMG interpolates through the available values within an ICTC, ICTCGaussSeidel, SOR, or DICSOR family. GaussSeidel and DICGaussSeidel can serve as omega=1 endpoints in the corresponding SOR families while retaining their built-in implementations. Omitting `coarsestSmoother` uses the same smoother on all levels.
+
+PCGBandit does not implement `coarsestSmootherTune`; each candidate uses one smoother setting across levels.
+
+### Subspace initialization
+
+Subspace initialization corrects the incoming PCG guess using a randomized subspace of previous iterates. It is disabled by default. Choose a window with `lenHistory`, or an exponentially weighted moving-average sketch with `decayRate`:
+
+```foam
+solver          PCGBandit;
+preconditioner  separate;
+lenHistory      8;              // alternatively: decayRate 0.5;
+numProbes       4;
+```
+
+The same plain settings work with `solver siPCG; preconditioner DIC;`, provided `libsubspaceInitialization` is loaded. Other solver integrations can use the initializer with an `fvMesh` registry.
 
 | Keyword | Default | Description |
 |---------|---------|-------------|
-| `minSmootherOmega` | `p0p8` | smallest encoded relaxation factor |
-| `maxSmootherOmega` | `p1p2` | largest encoded relaxation factor |
-| `numSmootherOmegas` | `5` | target number of relaxation factors to tune over |
+| `lenHistory` | `0` | Maximum stored iterates; `0` disables the window. |
+| `decayRate` | `0.0` | Weight multiplier per stored solve. Use `0 < decayRate < 1` for exponential forgetting; `0` disables the EWMA sketch. |
+| `numProbes` | `4` | Number of random directions; `0` disables the correction. |
+| `projection` | `galerkin` | Energy projection for a symmetric definite matrix; `leastSquares` instead minimizes the residual 2-norm. |
+| `truncTol` | `1e-14` | Discard reduced eigenmodes at or below this fraction of the largest eigenvalue magnitude. |
+| `persistState` | `no` | Write window or EWMA state at simulation write times and resume on restart. |
 
-Available encoded factors run from `p0p1` through `p1p9` in increments of 0.1. Thus `SOR_p0p6` uses ω=0.6 and `DICSOR_p1p4` uses ω=1.4.
-During family expansion, PCGBandit uses `GaussSeidel` for SOR at ω=1 and `DICGaussSeidel` for DICSOR at ω=1, removing duplicate candidates. Use these built-in names when specifying individual smoothers explicitly; `SOR_p1p0` and `DICSOR_p1p0` are not registered smoother names.
-With the defaults, the SOR family expands to `(SOR_p0p8 SOR_p0p9 GaussSeidel SOR_p1p1 SOR_p1p2)`. The example above widens the range to `(SOR_p0p6 SOR_p0p8 GaussSeidel SOR_p1p2 SOR_p1p4)`.
+PCG's matrix requirements still apply with either projection. `siPCG` rejects positive `lenHistory` and `decayRate` together; PCGBandit treats them as alternative candidate configurations.
 
-### Varying smoother parameters across multigrid levels
+History counts solves that reach initialization, not timesteps. Each sample is the incoming iterate before correction. Correction starts as soon as usable history exists, with the probe count capped by the available history and configured capacity. Every maintained window and sketch is updated, including when an off arm is selected.
 
-When configuring `FGAMG` directly, set `smoother` and `coarsestSmoother` to choose the finest and coarsest parameter values. For example:
+A solve that exits at the initial convergence check adds no sample and counts as no arm pull. If initialization itself converges, it still counts as a pull and skips preconditioner construction and CG iterations when `minIter` permits.
 
+State is shared per mesh, field, and component, including between `p` and `pFinal`. The first caller fixes capacity, seed, and persistence; use matching settings and tuning grids for dictionaries sharing a field. Later requests exceeding capacity are clamped with a warning.
+
+A window allocates one local solution vector per slot in the maximum configured `lenHistory`. EWMA allocates the maximum configured `numProbes` vectors per rate. A correction additionally allocates about twice its probe count in local vectors. Larger probe counts increase projection work quadratically through the reduced Gram matrix; they do not necessarily reduce total solve time.
+
+#### Tuning initialization
+
+`lenHistoryTune`, `decayRateTune`, and `numProbesTune` accept `yes`, `no`, or a list. `yes` uses the grid below; `no` keeps the plain setting or default. Lists override plain settings, must contain non-negative values, and require integers for lengths and probe counts.
+
+```foam
+lenHistoryTune  yes;            // (0 4 8 12 16)
+decayRateTune   yes;            // (0 0.25 0.5 0.75)
+numProbesTune   yes;            // (4 8 12 16)
 ```
-solver            FGAMG;
-smoother          ICTC_m4;
-coarsestSmoother  ICTC_m1;
-```
 
-FGAMG interpolates through the available parameter values across levels. Both endpoints must belong to the same family: `ICTC`, `ICTCGaussSeidel`, `SOR`, or `DICSOR`. If `coarsestSmoother` is omitted, all levels use `smoother`.
-PCGBandit currently does not implement `coarsestSmootherTune`; its smoother tuning uses the selected smoother on all levels.
+An empty history or rate list excludes that form; an empty probe list disables initialization. Supply unique decay rates with distinct registry-key representations: rate lists are not deduplicated.
+
+Probe counts are paired with each history length and each rate. Window and EWMA configurations form a union, and each is combined with every preconditioner candidate. Window probe counts are clamped to the window length; duplicate configurations collapse. The three default grids produce 23 subspace configurations, or 115 arms with `numDroptols 4` and the default DIC candidate.
+
+Zero-valued choices add an off configuration. Tuning does not otherwise add one; if no subspace configurations remain, the ordinary preconditioner candidates are retained. Window configurations precede EWMA configurations, following input order with probe count varying inside each. Consequently, off is not necessarily arm zero.
+
+#### Restarting
+
+Without persistence, subspace state starts empty after a restart. With `persistState yes`, binary state files are written as `contextWindow:<field>:<component>` and `EWMASketch:<field>:<component>:<rate>` in the time directory.
+
+Reuse state only with the same mesh ordering, decomposition, capacities, and seed. Size mismatches are rejected, but equal-sized changes in cell ordering are not detected. Restart fields and state must come from the same checkpoint; binary field output avoids additional rounding. Persistence restores subspace state, not the bandit's learning history, and does not by itself guarantee an identical simulation trajectory.
+
+The [design document](SUBSPACE_INITIALIZATION.md) contains the equations, implementation rationale, and historical benchmark results. The methods build on the [windowed subspace approach](https://arxiv.org/abs/2309.02156) and its [exponentially weighted extension](https://arxiv.org/abs/2511.18071).
 
 ## Examples
 
-The script `examples/run.sh` runs preconfigured simulations inside the Docker container.
-Its first argument specifies the case name and its optional second argument `debug` runs with a shorter end time and deterministic cost estimation.
+Run `examples/run.sh` with Bash inside the container. The optional `debug` argument shortens the run and enables deterministic cost estimation.
 
-The two FreeMHD cases (`closedPipe`, `fringingBField`) require the case files shipped in `examples/FreeMHD.zip`.
-Unzip it before running:
-```
-cd examples
+The FreeMHD cases require the bundled archive to be extracted first:
+
+```sh
+cd /home/openfoam/examples
 unzip FreeMHD.zip
 ```
 
-Example commands (run from within the container at `/home/openfoam/examples`):
-```
-bash run.sh boxTurb32              # OpenFOAM tutorial DNS/dnsFoam/boxTurb16 (at 2x resolution)
-bash run.sh boxTurb32 debug        # same, short run for testing
-bash run.sh pitzDaily              # OpenFOAM tutorial incompressible/pimpleFoam/RAS/pitzDaily (at 2x resolution)
-bash run.sh interStefanProblem     # OpenFOAM tutorial verificationAndValidation/multiphase/StefanProblem (at 2x resolution)
-bash run.sh porousDamBreak         # OpenFOAM tutorial verificationAndValidation/multiphase/interIsoFoam/porousDamBreak (at 2x resolution)
-bash run.sh closedPipe             # FreeMHD case (requires FreeMHD.zip, 16 MPI ranks)
-bash run.sh fringingBField         # FreeMHD case (requires FreeMHD.zip, 16 MPI ranks)
+From `/home/openfoam/examples`:
+
+```sh
+bash run.sh boxTurb32              # dnsFoam/boxTurb16, twice the resolution
+bash run.sh boxTurb32 debug        # short test run
+bash run.sh pitzDaily              # pimpleFoam/RAS/pitzDaily, twice the resolution
+bash run.sh interStefanProblem     # StefanProblem, twice the resolution
+bash run.sh porousDamBreak         # interIsoFoam/porousDamBreak, twice the resolution
+bash run.sh closedPipe             # FreeMHD, 16 MPI ranks
+bash run.sh fringingBField          # FreeMHD, 16 MPI ranks
 ```
 
-Each invocation runs three solver configurations and saves their logs alongside the case directory:
-* `PCGBandit` — full bandit tuning over `ICTC`, `DIC`, and `GAMG` configurations
-* `DIC` — baseline `DIC`-only preconditioner
-* `GAMG` — `GAMG` with `DICGaussSeidel` smoother only
+By default, each invocation runs three configurations through PCGBandit and saves their logs under `examples/<case>/`:
+
+- `PCGBandit`: tuning over ICTC, DIC, and multigrid candidates.
+- `DIC`: one DIC candidate.
+- `GAMG`: one multigrid candidate with DICGaussSeidel smoothing. Despite the log name, these examples load FGAMG and use it.
 
 ## References
 
-1. Khodak, Jung, Wynne, Chow, Kolemen. *PCGBandit: One-shot acceleration of transient PDE solvers via online-learned preconditioners.* 2025.
-2. Khodak, Chow, Balcan, Talwalkar. *Learning to relax: Setting solver parameters across a sequence of linear system instances.* ICLR 2024.
-3. Wynne, Saenz, Al-Salami, Xu, Sun, Hu, Hanada, Kolemen. *FreeMHD: Validation and verification of the open-source, multi-domain, multi-phase solver for electrically conductive flows.* Phys. Plasmas **32** (1) 2025.
+1. Khodak, Jung, Wynne, Chow, Kolemen. [One-shot acceleration of transient PDE solvers via online-learned preconditioners](https://arxiv.org/abs/2509.08765). 2025 preprint.
+2. Khodak, Chow, Balcan, Talwalkar. [Learning to relax: Setting solver parameters across a sequence of linear system instances](https://arxiv.org/abs/2310.02246). ICLR 2024.
+3. Wynne, Saenz, Al-Salami, Xu, Sun, Hu, Hanada, Kolemen. [FreeMHD: Validation and verification of the open-source, multi-domain, multi-phase solver for electrically conductive flows](https://arxiv.org/abs/2409.08950). Physics of Plasmas 32 (1), 2025.

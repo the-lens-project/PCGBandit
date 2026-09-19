@@ -1,6 +1,4 @@
-EXE_INC = \
-    -I../ICTC/lnInclude
+EXE_INC =
 
 LIB_LIBS = \
-    -L$(FOAM_USER_LIBBIN) \
-    -lICTC
+    -lOpenFOAM

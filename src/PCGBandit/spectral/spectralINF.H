@@ -15,13 +15,13 @@ if (t == 0.0) {
     learningDict.set<scalar>("t", t);
     SquareMatrix<scalar> S;
     if (pathSimilarity) {
-        S = pathMatrix(preconditionerDictsMap[banditName_]);
+        S = pathMatrix(configurationSpaces[banditName_].dicts());
     } else {
-        S = similarityMatrix(preconditionerDictsMap[banditName_]);
+        S = similarityMatrix(configurationSpaces[banditName_].dicts());
         elementwisePower(S, power);
     }
-    nonSerializableObjects_.set(banditName_, new DecomposedLaplacian(S));
-    const DecomposedLaplacian& Lap = *nonSerializableObjects_[banditName_];
+    nonSerializableObjects_.set(banditName_, new decomposedLaplacian(S));
+    const decomposedLaplacian& Lap = *nonSerializableObjects_[banditName_];
     scalar dEff = Lap.dEff(mu);
     learningDict.set<scalar>("dEff", dEff);
     if (gammaMax == 0.0) {
@@ -47,7 +47,7 @@ if (t == 0.0) {
     
     if (loss > 0.0) {
 
-        const DecomposedLaplacian& Lap = *nonSerializableObjects_[banditName_];
+        const decomposedLaplacian& Lap = *nonSerializableObjects_[banditName_];
         if (useBonus || useTsallis || ogTsallis) {
             Pair<scalarField> hb = Lap.getHatAndBonus(learningDict.get<scalarField>("probs"), mu, learningDict.get<label>("i"));
             F += hb[0] * loss;
@@ -116,7 +116,7 @@ if (t == 0.0) {
 }
 
 #ifdef PCGB_DEBUG
-Info<< "SpeKL Probabilities: " << probs << endl;
+Info<< "SpectralINF Probabilities: " << probs << endl;
 #endif
 
 // --- Naive random sampling

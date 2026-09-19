@@ -1,5 +1,8 @@
-DecomposedLaplacian.C
-MirrorDescent.C
-Similarity.C
+mirrorDescent.C
+costEstimation.C
+configurationSpace.C
+spectral/decomposedLaplacian.C
+spectral/similarityMatrix.C
 PCGBandit.C
+
 LIB = $(FOAM_USER_LIBBIN)/libPCGBandit

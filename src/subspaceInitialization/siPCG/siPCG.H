@@ -1,65 +1,67 @@
 /*---------------------------------------------------------------------------*\
 Class
-    Foam::PCGBandit
+    Foam::siPCG
+
 Group
     grpLduMatrixSolvers
+
 Description
-    Preconditioner conjugate gradient solver for symmetric lduMatrices
-    that uses Tsallis-INF (as described in Zimmert & Seldin (2021) to
-    select which preconditioner to use.
+    OpenFOAM PCG with subspace initialization before the first iteration
+    (arXiv:2309.02156, arXiv:2511.18071). Reads numProbes, lenHistory,
+    decayRate, and persistState from its fvSolution entry.
+
 SourceFiles
-    PCGBandit.C
+    siPCG.C
 \*---------------------------------------------------------------------------*/
-#ifndef PCGBandit_H
-#define PCGBandit_H
+
+#ifndef Foam_siPCG_H
+#define Foam_siPCG_H
+
 #include "lduMatrix.H"
-#include "autoPtr.H"
-#include "decomposedLaplacian.H"
-#include "mirrorDescent.H"
-#include "similarityMatrix.H"
 #include "subspaceInitializer.H"
-#include "costEstimation.H"
-#include "configurationSpace.H"
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
 namespace Foam
 {
+
 /*---------------------------------------------------------------------------*\
-                             Class PCGBandit Declaration
+                             Class siPCG Declaration
 \*---------------------------------------------------------------------------*/
-class PCGBandit
+
+class siPCG
 :
     public lduMatrix::solver
 {
+    // Private Member Data
 
+        //- Cached preconditioner
+        mutable autoPtr<lduMatrix::preconditioner> preconPtr_;
 
-private:
 
     // Private Member Functions
+
         //- No copy construct
-        PCGBandit(const PCGBandit&) = delete;
+        siPCG(const siPCG&) = delete;
+
         //- No copy assignment
-        void operator=(const PCGBandit&) = delete;
+        void operator=(const siPCG&) = delete;
 
-    word banditName_;
-    word lossEstimator_;
-    bool deterministic_;
-    bool randomUniform_;
-    word banditAlgorithm_;
-    label backstop_;
-    label static_;
-    autoPtr<subspaceInitializer> subspace_;
-    costEstimation costs_;
+        //- Uses field-keyed mesh state shared by p and pFinal across solves.
+        //  Disabled unless lenHistory or decayRate is set.
+        subspaceInitializer subspace_;
 
-
-    void queryLearner(const scalar initialResidual) const;
 
 public:
+
     //- Runtime type information
-    TypeName("PCGBandit");
+    TypeName("siPCG");
+
 
     // Constructors
+
         //- Construct from matrix components and solver controls
-        PCGBandit
+        siPCG
         (
             const word& fieldName,
             const lduMatrix& matrix,
@@ -69,10 +71,13 @@ public:
             const dictionary& solverControls
         );
 
+
     //- Destructor
-    virtual ~PCGBandit() = default;
+    virtual ~siPCG() = default;
+
 
     // Member Functions
+
         //- Solve the matrix with this solver
         virtual solverPerformance scalarSolve
         (
@@ -80,6 +85,7 @@ public:
             const solveScalarField& source,
             const direction cmpt=0
         ) const;
+
         //- Solve the matrix with this solver
         virtual solverPerformance solve
         (
@@ -88,8 +94,14 @@ public:
             const direction cmpt=0
         ) const;
 };
+
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
 } // End namespace Foam
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
 #endif
+
 // ************************************************************************* //

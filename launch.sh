@@ -19,6 +19,8 @@ cd /home/openfoam/src/ICTC
 wmake libso
 cd ../SOR
 wmake libso
+cd ../subspaceInitialization
+wmake libso
 cd ../PCGBandit
 wmake libso
 cd ../FGAMG

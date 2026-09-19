@@ -12,8 +12,8 @@ Description
     eigenvalues/D-optimal designs/neighbor lists for inspection.
 \*---------------------------------------------------------------------------*/
 
-#include "DecomposedLaplacian.H"
-#include "Similarity.H"
+#include "decomposedLaplacian.H"
+#include "similarityMatrix.H"
 
 
 void small() {
@@ -33,7 +33,7 @@ void small() {
 
   const SquareMatrix<scalar> S = pathMatrix(preconditionerDicts);
 
-  const DecomposedLaplacian decomposedLaplacian(S);
+  const decomposedLaplacian decomposedLaplacian(S);
 
   Info<< "similarity matrix:" << S << nl;
 
@@ -92,7 +92,7 @@ void medium() {
   label n = preconditionerDicts.size();
   label row = n / 2;
 
-  const DecomposedLaplacian decomposedLaplacian(S);
+  const decomposedLaplacian decomposedLaplacian(S);
   scalar mu = 0.1;
   scalarField Pi = decomposedLaplacian.DOptimalDesign(mu);
   Info<< "D-optimal design for mu=" << mu << ": " << Pi << endl;
@@ -156,7 +156,7 @@ void large() {
   label n = preconditionerDicts.size();
   label row = n / 2;
 
-  const DecomposedLaplacian decomposedLaplacian(S);
+  const decomposedLaplacian decomposedLaplacian(S);
   scalar mu = 0.1;
   scalarField Pi = decomposedLaplacian.DOptimalDesign(mu);
   Info<< "D-optimal design for mu=" << mu << ": " << Pi << endl;
