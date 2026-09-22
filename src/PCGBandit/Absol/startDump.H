@@ -6,7 +6,7 @@ if (mesh.time().writeTime()) {
     label numDumps = numDumpsDict.getOrAdd<label>(banditName_, 0) + 1;
     numDumpsDict.set<label>(banditName_, numDumps);
 
-    std::stringstream subdir;
+    OStringStream subdir;
     subdir << fieldName_ << "-Absol/" << numDumps << "/";
 
     dump<solveScalarField, IOField<solveScalar>>

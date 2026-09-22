@@ -36,7 +36,7 @@ Foam::ICTCSmootherBase::ICTCSmootherBase
 {
     label nnz = ICTCPreconditioner::calcL(diagL_, lowerL_, rowAddrL_, colPtrL_, matrix_, droptol, ICTCPreconditioner::PIVMIN);
 
-    // --- Accumulate factor sparsity for cost estimation; reset in PCGBandit::scalarSolve
+    // --- Accumulate factor nonzeros for cost estimation; resets in FGAMGSolver::initVcycle
     const word key = "ICTC_SMOOTHER_NNZ";
     dictionary& cdict = debug::controlDict();
     cdict.set<label>(key, cdict.getOrDefault<label>(key, 0) + nnz);

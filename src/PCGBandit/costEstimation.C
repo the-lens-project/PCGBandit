@@ -155,7 +155,7 @@ Foam::scalar Foam::costEstimation::perIterationCostEstimate
 
     // --- Compute ratio of ICTC smoother fills to agglomeration matrix fills
     scalar fillFactor = 1.0;
-    if (smoother.find("ICTC") != std::string::npos) {
+    if (smoother.contains("ICTC")) {
         scalar nnzAgg = scalar(nnzL);
         for (label i = 0; i < L; i++) {
             nnzAgg += scalar(agg.nFaces(i));

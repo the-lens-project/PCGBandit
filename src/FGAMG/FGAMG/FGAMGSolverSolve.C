@@ -446,6 +446,8 @@ void Foam::FGAMGSolver::initVcycle
     solveScalarField& scratch2
 ) const
 {
+    // Accumulate factor nonzeros over the smoothers constructed below.
+    debug::controlDict().set<label>("ICTC_SMOOTHER_NNZ", 0);
 
     label maxSize = matrix_.diag().size();
 

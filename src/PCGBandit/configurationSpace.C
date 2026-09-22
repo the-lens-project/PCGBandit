@@ -254,10 +254,18 @@ void Foam::configurationSpace::appendGAMG
                         OStringStream os;
                         os << t;
                         word config = os.str();
-                        if (param == "smoother" && (config == "ICTC" || config == "ICTCGaussSeidel")) { // add ICTC smoothers
-                            if (GAMG_or_FGAMG == "GAMG") {
-                                WarningInFunction<< "Set " << config << " smoother but FGAMG unavailable; using GAMG (may be slow)" << endl;
+                        if (param == "smoother" && GAMG_or_FGAMG == "GAMG" && config.startsWith("ICTC")) {
+                            if (Switch(solverControls.getOrDefault<word>("deterministic", "no"))
+                                || solverControls.getOrDefault<label>("backstop", -1) == -1) {
+                                FatalErrorInFunction
+                                    << "cost estimation not implemented for ICTC smoothers for GAMG; "
+                                    << "load libFGAMG" << exit(FatalError);
                             }
+                            WarningInFunction
+                                << "Set " << config  << " smoother but FGAMG unavailable; "
+                                << "using GAMG (may be slow)" << endl;
+                        }
+                        if (param == "smoother" && (config == "ICTC" || config == "ICTCGaussSeidel")) { // add ICTC smoothers
                             for (label idx = ictcRange.minIdx; idx <= ictcRange.maxIdx; idx += ictcRange.inc) {
                                 appendUnique(config + "_" + ICTCSuffixes[idx]);
                             }

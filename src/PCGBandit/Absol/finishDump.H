@@ -2,7 +2,7 @@ if (mesh.time().writeTime()) {
 
     const label numDumps = numDumpsDict.get<label>(banditName_);
 
-    std::stringstream subdir;
+    OStringStream subdir;
     subdir << fieldName_ << "-Absol/" << numDumps << "/";
 
     // Global cell numbering, so the per-processor pieces can be assembled into

@@ -1,6 +1,7 @@
 # OpenFOAM wmake build artifacts
-Make/linux*/
+**/Make/linux*/
 lnInclude/
+/src/PCGBandit/Spectral/test/spectral
 
 # Python
 __pycache__/
@@ -15,3 +16,6 @@ __pycache__/
 
 # Benchmark run/dump output created by examples/run.sh
 /examples/closedPipe/
+
+# Local test output from runtest.sh
+/.testout/

@@ -1,393 +1,516 @@
 /*---------------------------------------------------------------------------*\
-        Functions to build matrices of preconditioner similarities.
+                   Class similarityMatrix Implementation
 \*---------------------------------------------------------------------------*/
 
 #include "similarityMatrix.H"
-#include "configurationSpace.H"
+#include "char.H"
+
+#include <cmath>
 
 namespace Foam
 {
 
-// Parse the droptol scalar from a word-encoded smoother name.
-// e.g. "ICTCGaussSeidel_m3p5" -> 10^-3.5, "DICGaussSeidel" -> 1.0
-static scalar smootherToDroptol(const word& smootherName) {
-    if (smootherName == "DICSOR_p1p0") return 1.0;
+// * * * * * * * * * * * * * * * Local Functions * * * * * * * * * * * * * * //
 
-    label underscoreIdx = smootherName.rfind('_');
-    if (underscoreIdx == -1) return 1.0;
-
-    word suffix = smootherName.substr(underscoreIdx + 1);
-    word magnitudeStr = suffix.substr(1);
-
-    label decimalIdx = magnitudeStr.find('p');
-    if (decimalIdx == -1) {
-        return pow(10.0, -1.0 * std::stod(magnitudeStr));
-    } else {
-        scalar wholePart   = std::stod(magnitudeStr.substr(0, decimalIdx));
-        scalar fracPart    = std::stod(magnitudeStr.substr(decimalIdx + 1));
-        scalar fracDivisor = pow(10.0, scalar(magnitudeStr.substr(decimalIdx + 1).size()));
-        return pow(10.0, -1.0 * (wholePart + fracPart / fracDivisor));
-    }
-}
-
-static bool smootherIsICTCLike(const word& smootherName) {
-    return smootherName.startsWith("ICTC_")
-        || smootherName == "ICTC"
-        || smootherName == "DIC";
-}
-
-static bool smootherIsICTCGaussSeidelLike(const word& smootherName) {
-    return smootherName.startsWith("ICTCGaussSeidel_")
-        || smootherName == "ICTCGaussSeidel"
-        || smootherName == "DICGaussSeidel"
-        || smootherName == "DICSOR_p1p0";
-}
-
-// Parse the SOR relaxation factor omega from a word-encoded smoother name.
-// e.g. "SOR_p0p5" -> 0.5, "DICSOR_p1p3" -> 1.3, "DICGaussSeidel" -> 1.0 
-static scalar smootherToOmega(const word& smootherName) {
-
-    label underscoreIdx = smootherName.rfind('_');
-    if (underscoreIdx == -1) return 1.0;
-
-    word suffix = smootherName.substr(underscoreIdx + 1);
-    label decimalIdx = suffix.find('p', 1);
-
-    scalar wholePart   = std::stod(suffix.substr(1, decimalIdx - 1));
-    word fracStr       = suffix.substr(decimalIdx + 1);
-    scalar fracDivisor = pow(10.0, scalar(fracStr.size()));
-    return wholePart + std::stod(fracStr) / fracDivisor;
-}
-
-static bool smootherIsSORLike(const word& smootherName) {
-    return smootherName.startsWith("SOR_") 
-        || smootherName == "GaussSeidel";
-}
-
-static bool smootherIsDICSORLike(const word& smootherName) {
-    return smootherName.startsWith("DICSOR_") 
-        || smootherName == "DICGaussSeidel";
-}
-
-
-static scalar omegaSimilarity(const scalar omega_i, const scalar omega_j)
+namespace
 {
-    return 1.0 / (1.0 + mag(omega_i - omega_j));
+
+// Allow rounding differences between parsed suffixes and dictionary values.
+inline bool sameValue(const scalar x, const scalar y)
+{
+    return mag(x - y) <= SMALL*max(mag(x), mag(y));
 }
 
-static scalar ICTCSimilarity(const scalar droptol_i, const scalar droptol_j)
+
+// Other numeric axes infer their metric from their values.
+axisMetric metricForAxis(const word& axisName)
 {
-    return 1.0 / (1.0 + mag(log10(droptol_i / droptol_j)));
-}
-
-static scalar similarityIC
-(
-    const dictionary& preconDict_i,
-    const dictionary& preconDict_j
-)
-{
-    word type_i = preconDict_i.get<word>("preconditioner");
-    word type_j = preconDict_j.get<word>("preconditioner");
-
-    // --- DIC has no droptol, treat as 1.0
-    scalar droptol_i = (type_i == "DIC") ? 1.0 : preconDict_i.get<scalar>("droptol");
-    scalar droptol_j = (type_j == "DIC") ? 1.0 : preconDict_j.get<scalar>("droptol");
-
-    scalar logRatioDroptol = mag(log10(droptol_i / droptol_j));
-    return 1.0 / (1.0 + logRatioDroptol);
-}
-
-// Similarity between two GAMG configurations. Score is the average of three
-// components: smoother similarity, mergeLevels match, and nCellsInCoarsest proximity.
-// Each component contributes equally, giving a score in [0, 1].
-static scalar similarityGAMG
-(
-    const dictionary& preconDict_i,
-    const dictionary& preconDict_j
-)
-{
-    scalar score = 0.0;
-
-    word smoother_i = preconDict_i.get<word>("smoother");
-    word smoother_j = preconDict_j.get<word>("smoother");
-
-    // --- Smoother similarity
-    if (
-        (smootherIsICTCLike(smoother_i) && smootherIsICTCLike(smoother_j))
-     || (smootherIsICTCGaussSeidelLike(smoother_i) && smootherIsICTCGaussSeidelLike(smoother_j))
+    if
+    (
+        axisName == "droptol"
+     || axisName == "smootherDroptol"
+     || axisName == "nCellsInCoarsestLevel"
     )
     {
-        score += ICTCSimilarity(smootherToDroptol(preconDict_i.get<word>("smoother")),
-                                smootherToDroptol(preconDict_j.get<word>("smoother")));
+        return axisMetric::logRatio;
     }
-    else if (
-        (smootherIsSORLike(smoother_i) && smootherIsSORLike(smoother_j))
-     || (smootherIsDICSORLike(smoother_i) && smootherIsDICSORLike(smoother_j))
+
+    if (axisName == "smootherOmega" || axisName == "decayRate")
+    {
+        return axisMetric::fractionalDiff;
+    }
+
+    return axisMetric::inferred;
+}
+
+
+struct smootherSplit
+{
+    word family;
+    bool hasDroptol = false;
+    bool hasOmega = false;
+    scalar droptol = 1.0;
+    scalar omega = 1.0;
+};
+
+
+// Decode "m3p5" as -3.5 and "p1p2" as 1.2.
+bool parseSuffix(const word& suffix, scalar& value)
+{
+    if (suffix.size() < 2 || suffix.size() > 12) return false;
+
+    const char sign = suffix[0];
+    if (sign != 'm' && sign != 'p') return false;
+
+    string number = suffix.substr(1);
+    const string::size_type point = number.find('p');
+    if (point == 0 || point == number.size() - 1) return false;
+
+    for (string::size_type i = 0; i < number.size(); ++i)
+    {
+        if (i == point) number[i] = '.';
+        else if (!Foam::isdigit(number[i])) return false;
+    }
+
+    if (!readScalar(number, value)) return false;
+    if (sign == 'm') value = -value;
+    return true;
+}
+
+
+// DIC is droptol=1; GaussSeidel is omega=1.
+bool splitSmoother(const word& smoother, smootherSplit& split)
+{
+    const word::size_type underscore = smoother.rfind('_');
+    const bool suffixed = (underscore != word::npos);
+    const word stem = smoother.substr(0, underscore);
+
+    scalar parsed = 0.0;
+    const bool parsedSuffix =
+        suffixed && parseSuffix(smoother.substr(underscore + 1), parsed);
+
+    if
+    (
+        suffixed
+     &&
+        (
+            !parsedSuffix
+         ||
+            (
+                stem != "ICTC" && stem != "SOR"
+             && stem != "ICTCGaussSeidel" && stem != "DICSOR"
+            )
+        )
     )
     {
-        score += omegaSimilarity(smootherToOmega(preconDict_i.get<word>("smoother")), 
-                                 smootherToOmega(preconDict_j.get<word>("smoother")));
+        return false;
     }
-    else if (smoother_i == smoother_j)
+
+    if (stem == "symGaussSeidel")
     {
-        score += 1.0;
+        split.family = "symGS";
+        return true;
     }
 
-    // --- mergeLevels similarity: binary match
-    label mergeLevels_i = preconDict_i.getOrDefault<label>("mergeLevels", 1);
-    label mergeLevels_j = preconDict_j.getOrDefault<label>("mergeLevels", 1);
-    if (mergeLevels_i == mergeLevels_j)
-        score += 1.0;
+    if (stem == "ICTC" || stem == "DIC")
+    {
+        split.family = "ICTC";
+        split.hasDroptol = true;
+        split.droptol =
+            (stem == "ICTC" && parsedSuffix) ? pow(scalar(10), parsed) : 1.0;
+        return true;
+    }
 
-    // --- nCellsInCoarsest similarity: log-ratio based
-    scalar nCells_i = preconDict_i.getOrDefault<label>("nCellsInCoarsestLevel", 10);
-    scalar nCells_j = preconDict_j.getOrDefault<label>("nCellsInCoarsestLevel", 10);
-    scalar logRatioNCells = mag(log10(nCells_i / nCells_j));
-    score += 1.0 / (1.0 + logRatioNCells);
+    if (stem == "SOR" || stem == "GaussSeidel")
+    {
+        split.family = "SOR";
+        split.hasOmega = true;
+        split.omega = (stem == "SOR" && parsedSuffix) ? parsed : 1.0;
+        return true;
+    }
 
-    return score / 3.0;
+    if
+    (
+        stem == "ICTCGaussSeidel"
+     || stem == "DICGaussSeidel"
+     || stem == "DICSOR"
+    )
+    {
+        split.family = "ICTCSOR";
+        split.hasDroptol = true;
+        split.hasOmega = true;
+        split.droptol =
+            (stem == "ICTCGaussSeidel" && parsedSuffix)
+          ? pow(scalar(10), parsed)
+          : 1.0;
+        split.omega = (stem == "DICSOR" && parsedSuffix) ? parsed : 1.0;
+        return true;
+    }
+
+    return false;
 }
 
-// Similarity along the three subspace-initialization axes, in [0, 1].
-static scalar subspaceSimilarity
+} // End anonymous namespace
+
+
+// * * * * * * * * * * * * * * parameterAxis Members * * * * * * * * * * * * //
+
+label parameterAxis::addCategory(const word& category)
+{
+    forAll(categories_, i)
+    {
+        if (categories_[i] == category) return i;
+    }
+    categories_.append(category);
+    return categories_.size() - 1;
+}
+
+
+void parameterAxis::addValue(const scalar value)
+{
+    for (const scalar known : values_)
+    {
+        if (sameValue(known, value)) return;
+    }
+    values_.append(value);
+}
+
+
+void parameterAxis::finalise()
+{
+    Foam::sort(values_);
+
+    if (metric_ != axisMetric::inferred) return;
+
+    // Any fractional value selects the scaled metric for the whole axis.
+    metric_ = axisMetric::integerDiff;
+    for (const scalar value : values_)
+    {
+        if (mag(value - std::round(value)) > SMALL)
+        {
+            metric_ = axisMetric::fractionalDiff;
+            return;
+        }
+    }
+}
+
+
+label parameterAxis::rank(const scalar value) const
+{
+    forAll(values_, i)
+    {
+        if (sameValue(values_[i], value)) return i;
+    }
+    return -1;
+}
+
+
+scalar parameterAxis::distance(const scalar x, const scalar y) const
+{
+    switch (metric_)
+    {
+        case axisMetric::logRatio:
+            return mag(log10(max(x, VSMALL)) - log10(max(y, VSMALL)));
+
+        case axisMetric::fractionalDiff:
+            return 10.0*mag(x - y);
+
+        case axisMetric::categorical:
+            return
+                sameValue(x, y)
+              ? 0.0
+              : 1.0/scalar(max(label(1), categories_.size()));
+
+        case axisMetric::integerDiff:
+        case axisMetric::inferred:
+            break;
+    }
+
+    return mag(x - y);
+}
+
+
+scalar parameterAxis::worstCase() const
+{
+    if (values_.size() < 2) return 0.0;
+
+    if (metric_ == axisMetric::categorical)
+    {
+        return 1.0/scalar(max(label(1), categories_.size()));
+    }
+
+    // Numeric values are sorted; the endpoints give the largest distance.
+    return distance(values_[0], values_[values_.size() - 1]);
+}
+
+
+bool parameterAxis::neighbours(const scalar x, const scalar y) const
+{
+    if (metric_ == axisMetric::categorical) return true;
+
+    const label rankX = rank(x);
+    const label rankY = rank(y);
+    return (rankX >= 0 && rankY >= 0 && mag(rankX - rankY) == 1);
+}
+
+
+// * * * * * * * * * * * * similarityMatrix Members * * * * * * * * * * * * * //
+
+void similarityMatrix::setValue
 (
-    const dictionary& preconDict_i,
-    const dictionary& preconDict_j
+    HashTable<scalar>& arm,
+    const word& axisName,
+    const scalar value
 )
 {
-    label lenHistory_i = preconDict_i.getOrDefault<label>("lenHistory", 0);
-    label lenHistory_j = preconDict_j.getOrDefault<label>("lenHistory", 0);
-    label numProbes_i  = preconDict_i.getOrDefault<label>("numProbes", 4);
-    label numProbes_j  = preconDict_j.getOrDefault<label>("numProbes", 4);
-    scalar decay_i     = preconDict_i.getOrDefault<scalar>("decayRate", 0);
-    scalar decay_j     = preconDict_j.getOrDefault<scalar>("decayRate", 0);
+    if (!axes_.found(axisName))
+    {
+        axes_.insert(axisName, parameterAxis(metricForAxis(axisName)));
+    }
 
-    const bool off_i = subspaceOff(preconDict_i);
-    const bool off_j = subspaceOff(preconDict_j);
-
-    if (off_i || off_j) return (off_i && off_j) ? 1.0 : 0.0;
-
-    if ((decay_i > 0) != (decay_j > 0)) return 0.0;
-
-    scalar logRatioNumProbes  = mag(log2(scalar(numProbes_i)/scalar(numProbes_j)));
-
-    const scalar depth_i =
-        (decay_i > 0) ? 1.0/max(SMALL, 1.0 - decay_i) : scalar(lenHistory_i);
-    const scalar depth_j =
-        (decay_j > 0) ? 1.0/max(SMALL, 1.0 - decay_j) : scalar(lenHistory_j);
-
-    scalar logRatioDepth = mag(log2(depth_i/depth_j));
-
-    return 0.5/(1.0 + logRatioDepth) + 0.5/(1.0 + logRatioNumProbes);
+    axes_[axisName].addValue(value);
+    arm.set(axisName, value);
 }
 
 
-// Build the full similarity matrix over all preconditioner configurations.
-// S[i][j] is the similarity between arm i and arm j, in [0, 1].
-// Cross-type similarity (IC vs GAMG) is always 0.
-SquareMatrix<scalar> similarityMatrix(
-    const List<dictionary>& preconditionerDicts
-) {
-
-    label numConfigs = preconditionerDicts.size();
-    SquareMatrix<scalar> S(numConfigs, 0.0);
-
-    for (label i = 0; i < numConfigs; ++i){
-
-        S(i, i) = 1.0;
-        
-        for (label j = i + 1; j < numConfigs; j++) {
-            
-            const dictionary& dict_i = preconditionerDicts[i];
-            const dictionary& dict_j = preconditionerDicts[j];
-            scalar similarity = 0.0;
-
-            word type_i = dict_i.get<word>("preconditioner");
-            word type_j = dict_j.get<word>("preconditioner");
-
-            bool iGAMG = (type_i == "GAMG" || type_i == "FGAMG");
-            bool jGAMG = (type_j == "GAMG" || type_j == "FGAMG");
-            bool iIC   = (type_i == "ICTC" || type_i == "DIC");
-            bool jIC   = (type_j == "ICTC" || type_j == "DIC");
-
-            if (iGAMG && jGAMG) {
-                similarity = similarityGAMG(dict_i, dict_j);
-            } else if (iIC && jIC) {
-                similarity = similarityIC(dict_i, dict_j);
-            }
-
-            similarity *= subspaceSimilarity(dict_i, dict_j);
-
-            S(i, j) = similarity;
-            S(j, i) = similarity;
-        }
+void similarityMatrix::setCategory
+(
+    HashTable<scalar>& arm,
+    const word& axisName,
+    const word& category
+)
+{
+    if (!axes_.found(axisName))
+    {
+        axes_.insert(axisName, parameterAxis(axisMetric::categorical));
     }
 
-    return S;
-
+    parameterAxis& axis = axes_[axisName];
+    const scalar index = scalar(axis.addCategory(category));
+    axis.addValue(index);
+    arm.set(axisName, index);
 }
 
-template<class T>
-static dictionary rankDict(DynamicList<T>& values) {
-    Foam::sort(values);
-    dictionary dict;
-    label rank = 0;
-    forAll(values, k) {
-        word key = Foam::name(values[k]);
-        if (!dict.found(key)) {
-            dict.add(key, rank++);
-        }
-    }
-    return dict;
-}
 
-// Build the full similarity matrix over all preconditioner configurations.
-// S[i][j] is the similarity between arm i and arm j, in {0, 1}.
-// Cross-type similarity (IC vs GAMG) is always 0.
-SquareMatrix<scalar> pathMatrix(
-    const List<dictionary>& preconditionerDicts
-) {
+void similarityMatrix::discoverAxes(const List<dictionary>& armDicts)
+{
+    arms_.setSize(armDicts.size());
 
-    label numConfigs = preconditionerDicts.size();
-    DynamicList<scalar> droptolList;
-    DynamicList<label> nCellsList;
-    DynamicList<scalar> smootherList;
-    DynamicList<scalar> omegaList;
-    DynamicList<label> lenHistoryList;
-    DynamicList<label> numProbesList;
-    DynamicList<scalar> decayRateList;
+    forAll(armDicts, armi)
+    {
+        const dictionary& armDict = armDicts[armi];
+        HashTable<scalar>& arm = arms_[armi];
 
-    for (label i = 0; i < numConfigs; ++i) {
-        const dictionary& dict = preconditionerDicts[i];
-        lenHistoryList.append(dict.getOrDefault<label>("lenHistory", 0));
-        numProbesList.append(dict.getOrDefault<label>("numProbes", 4));
-        decayRateList.append(dict.getOrDefault<scalar>("decayRate", 0));
-        word type = dict.get<word>("preconditioner");
-        if (type == "ICTC") {
-            droptolList.append(dict.get<scalar>("droptol"));
-        } else if (type == "DIC") {
-            droptolList.append(1.0);
-        } else if (type == "GAMG" || type == "FGAMG") {
-            nCellsList.append(dict.getOrDefault<label>("nCellsInCoarsestLevel", 10));
-            word smoother = dict.get<word>("smoother");
-            if (smootherIsICTCLike(smoother) || smootherIsICTCGaussSeidelLike(smoother)) {
-                smootherList.append(smootherToDroptol(smoother));
-            }
-            if (smootherIsSORLike(smoother) || smootherIsDICSORLike(smoother)) {
-                omegaList.append(smootherToOmega(smoother));
-            }
-        }
-    }
+        for (const word& key : armDict.toc())
+        {
+            if (key == "cacheAgglomeration") continue;
 
-    dictionary droptolRanks = rankDict(droptolList);
-    dictionary nCellsRanks = rankDict(nCellsList);
-    dictionary smootherRanks = rankDict(smootherList);
-    dictionary omegaRanks = rankDict(omegaList);
-    dictionary lenHistoryRanks = rankDict(lenHistoryList);
-    dictionary numProbesRanks = rankDict(numProbesList);
-    dictionary decayRateRanks = rankDict(decayRateList);
+            if (key == "preconditioner")
+            {
+                const word type = armDict.get<word>(key);
 
-    SquareMatrix<scalar> S(numConfigs, 0.0);
-
-    for (label i = 0; i < numConfigs; ++i) {
-
-        S(i, i) = 1.0;
-
-        for (label j = i + 1; j < numConfigs; j++) {
-
-            const dictionary& dict_i = preconditionerDicts[i];
-            const dictionary& dict_j = preconditionerDicts[j];
-            scalar adjacent = 0.0;
-            label diff = 0;
-
-            auto axisDiff =
-                [&](const dictionary& ranks, const word& key, auto defaultValue)
+                if (type == "ICTC" || type == "DIC")
                 {
-                    typedef decltype(defaultValue) axisType;
-                    return mag
-                    (
-                        ranks.get<label>(name(dict_i.getOrDefault<axisType>(key, defaultValue)))
-                      - ranks.get<label>(name(dict_j.getOrDefault<axisType>(key, defaultValue)))
-                    );
-                };
-
-            diff += axisDiff(lenHistoryRanks, "lenHistory", label(0));
-            diff += axisDiff(numProbesRanks,  "numProbes",  label(4));
-            diff += axisDiff(decayRateRanks,  "decayRate",  scalar(0));
-
-            word type_i = dict_i.get<word>("preconditioner");
-            word type_j = dict_j.get<word>("preconditioner");
-
-            bool iGAMG = (type_i == "GAMG" || type_i == "FGAMG");
-            bool jGAMG = (type_j == "GAMG" || type_j == "FGAMG");
-            bool iIC   = (type_i == "ICTC" || type_i == "DIC");
-            bool jIC   = (type_j == "ICTC" || type_j == "DIC");
-
-            if (iGAMG && jGAMG) {
-                label iNC = nCellsRanks.get<label>(name(dict_i.getOrDefault<label>("nCellsInCoarsestLevel", 10)));
-                label jNC = nCellsRanks.get<label>(name(dict_j.getOrDefault<label>("nCellsInCoarsestLevel", 10)));
-                diff += mag(iNC - jNC);
-                word smoother_i = dict_i.get<word>("smoother");
-                word smoother_j = dict_j.get<word>("smoother");
-                if (
-                    (smootherIsICTCLike(smoother_i) && smootherIsICTCLike(smoother_j))
-                 || (smootherIsICTCGaussSeidelLike(smoother_i) && smootherIsICTCGaussSeidelLike(smoother_j))
-                ) {
-                    diff += mag(
-                        smootherRanks.get<label>(name(smootherToDroptol(smoother_i))) -
-                        smootherRanks.get<label>(name(smootherToDroptol(smoother_j)))
-                    );
-                } else if (
-                    (smootherIsSORLike(smoother_i) && smootherIsSORLike(smoother_j))
-                 || (smootherIsDICSORLike(smoother_i) && smootherIsDICSORLike(smoother_j))
-                ) {
-                    diff += mag(
-                        omegaRanks.get<label>(name(smootherToOmega(smoother_i))) -
-                        omegaRanks.get<label>(name(smootherToOmega(smoother_j)))
-                    );
-                } else if (smoother_i != smoother_j) {
-                    diff++;
+                    setCategory(arm, key, "IC");
+                    if (type == "DIC") setValue(arm, "droptol", 1.0);
                 }
-                if (dict_i.getOrDefault<label>("mergeLevels", 1) != dict_j.getOrDefault<label>("mergeLevels", 1)) {
-                    diff++;
+                else
+                {
+                    setCategory(arm, key, type == "FGAMG" ? "GAMG" : type);
                 }
-                if (diff < 2) {
-                    adjacent = 1.0;
-                }
-            } else if (iIC && jIC) {
-                label iD = droptolRanks.get<label>(name(dict_i.getOrDefault<scalar>("droptol", 1.0)));
-                label jD = droptolRanks.get<label>(name(dict_j.getOrDefault<scalar>("droptol", 1.0)));
-                diff += mag(iD - jD);
-                if (diff < 2) {
-                    adjacent = 1.0;
-                }
+                continue;
             }
 
-            S(i, j) = adjacent;
-            S(j, i) = adjacent;
+            if (key == "smoother")
+            {
+                const word smoother = armDict.get<word>(key);
+                smootherSplit split;
 
-        }
-    }
+                if (splitSmoother(smoother, split))
+                {
+                    setCategory(arm, "smootherFamily", split.family);
+                    if (split.hasDroptol)
+                    {
+                        setValue(arm, "smootherDroptol", split.droptol);
+                    }
+                    if (split.hasOmega)
+                    {
+                        setValue(arm, "smootherOmega", split.omega);
+                    }
+                }
+                else
+                {
+                    setCategory(arm, "smootherFamily", smoother);
+                }
+                continue;
+            }
 
-    return S;
+            if (key == "directSolveCoarsest")
+            {
+                setCategory(arm, key, armDict.get<bool>(key) ? "yes" : "no");
+                continue;
+            }
 
-}
-
-
-void elementwisePower(
-    SquareMatrix<scalar>& S, 
-    const scalar power
-) {
-
-    if (power != 1.0) {
-        for (label i = 0; i < S.n(); i++) {
-            for (label j = 0; j < S.n(); j++) {
-                S(i, j) = pow(S(i, j), power);
+            if (armDict.lookup(key, keyType::LITERAL).front().isNumber())
+            {
+                setValue(arm, key, armDict.get<scalar>(key));
+            }
+            else
+            {
+                setCategory(arm, key, armDict.get<word>(key));
             }
         }
     }
 
+    forAllIters(axes_, iter)
+    {
+        iter.val().finalise();
+    }
 }
+
+
+void similarityMatrix::buildDist()
+{
+    const label numArms = arms_.size();
+
+    for (label i = 0; i < numArms; ++i)
+    {
+        (*this)(i, i) = 1.0;
+
+        for (label j = i + 1; j < numArms; ++j)
+        {
+            const HashTable<scalar>& armI = arms_[i];
+            const HashTable<scalar>& armJ = arms_[j];
+
+            scalar similarity = 1.0;
+
+            forAllConstIters(axes_, iter)
+            {
+                const word& axisName = iter.key();
+                const parameterAxis& axis = iter.val();
+
+                const bool onI = armI.found(axisName);
+                const bool onJ = armJ.found(axisName);
+
+                if (!onI && !onJ) continue;
+
+                const scalar d =
+                    (onI && onJ)
+                  ? axis.distance(armI[axisName], armJ[axisName])
+                  : axis.worstCase();
+
+                similarity /= (1.0 + d);
+            }
+
+            (*this)(i, j) = similarity;
+            (*this)(j, i) = similarity;
+        }
+    }
+}
+
+
+void similarityMatrix::buildPath()
+{
+    const label numArms = arms_.size();
+
+    for (label i = 0; i < numArms; ++i)
+    {
+        (*this)(i, i) = 1.0;
+
+        for (label j = i + 1; j < numArms; ++j)
+        {
+            const HashTable<scalar>& armI = arms_[i];
+            const HashTable<scalar>& armJ = arms_[j];
+
+            if (armI.size() != armJ.size()) continue;
+
+            word differing;
+            label numDiffering = 0;
+            bool sameAxes = true;
+
+            forAllConstIters(armI, iter)
+            {
+                if (!armJ.found(iter.key()))
+                {
+                    sameAxes = false;
+                    break;
+                }
+                if (!sameValue(iter.val(), armJ[iter.key()]))
+                {
+                    differing = iter.key();
+                    ++numDiffering;
+                    if (numDiffering > 1) break;
+                }
+            }
+
+            if (!sameAxes || numDiffering != 1) continue;
+
+            if (axes_[differing].neighbours(armI[differing], armJ[differing]))
+            {
+                (*this)(i, j) = 1.0;
+                (*this)(j, i) = 1.0;
+            }
+        }
+    }
+}
+
+
+// * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
+
+similarityMatrix::similarityMatrix
+(
+    const List<dictionary>& armDicts,
+    const similarityMode mode
+)
+:
+    SquareMatrix<scalar>(armDicts.size(), 0.0),
+    mode_(mode)
+{
+    discoverAxes(armDicts);
+
+    if (mode_ == similarityMode::path)
+    {
+        buildPath();
+    }
+    else
+    {
+        buildDist();
+    }
+}
+
+
+similarityMatrix::similarityMatrix
+(
+    const List<dictionary>& armDicts,
+    const dictionary& solverControls
+)
+:
+    similarityMatrix(armDicts, readMode(solverControls))
+{}
+
+
+// * * * * * * * * * * * * * Static Member Functions * * * * * * * * * * * * //
+
+similarityMode similarityMatrix::readMode(const dictionary& solverControls)
+{
+    const word mode = solverControls.getOrDefault<word>("similarity", "path");
+
+    if (mode == "path") return similarityMode::path;
+    if (mode == "dist") return similarityMode::dist;
+
+    FatalErrorInFunction
+        << "Unknown similarity option " << mode
+        << "; expected dist or path" << exit(FatalError);
+
+    return similarityMode::path;
+}
+
+
+word similarityMatrix::modeName(const similarityMode mode)
+{
+    return (mode == similarityMode::path) ? "path" : "dist";
+}
+
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 

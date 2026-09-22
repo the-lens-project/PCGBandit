@@ -12,6 +12,7 @@
 #include "Random.H"
 
 #include "HashPtrTable.H"
+#include "OStringStream.H"
 
 //#define PCGB_DEBUG
 //#define DUMP_ABSOL
@@ -39,6 +40,7 @@ namespace Foam
     #include "Absol/initializeDumping.H"
     #endif
 
+    // --- For storage across instances by learning algorithms
     HashPtrTable<decomposedLaplacian> nonSerializableObjects_;
 
 }
@@ -304,9 +306,6 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
                 subspaceTime -= clockValue::now();
 
                 preconstructTime = preconstructTime.now();
-
-                // --- Resets the ICTCSmoother NNZ accumulator for deterministic mode
-                debug::controlDict().set<label>("ICTC_SMOOTHER_NNZ", 0);
 
                 // --- The correction may have converged the system on its own
                 converged =

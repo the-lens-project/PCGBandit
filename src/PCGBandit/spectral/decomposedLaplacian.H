@@ -26,9 +26,6 @@ private:
         const label d_;
         label numZeroEVals_;
 
-        const label maxFWIter_ = 1000;
-        const scalar tolerance_ = 1e-8;
-
         //- Laplacian
         SquareMatrix<scalar> Laplacian_;
 
@@ -39,6 +36,8 @@ private:
         //- Eigenrows of the Laplacian matrix
         List<scalarField> X_;
 
+        //- Maximise log determinant or effective dimension on the simplex
+        scalarField optimalDesign(const scalar mu, const bool trace) const;
 
 public:
 
@@ -46,7 +45,7 @@ public:
 
     // Constructors
 
-        decomposedLaplacian(const SquareMatrix<scalar>& similarityMatrix);
+        decomposedLaplacian(const SquareMatrix<scalar>& W);
 
     // Destructor
 
@@ -65,7 +64,11 @@ public:
         LLTMatrix<scalar> cholLambdaPlusVPi(const scalarField& Pi, const scalar mu) const;
         LLTMatrix<scalar> cholLaplacianPlusPi(const scalarField& Pi, const scalar mu) const;
         scalar dEff(scalar mu) const;
+        //- Maximise log det(mu*L + diag(Pi) + SMALL*I)
         scalarField DOptimalDesign(const scalar mu) const;
+
+        //- Maximise Tr(diag(Pi)*(mu*L + diag(Pi) + SMALL*I)^-1)
+        scalarField traceOptimalDesign(const scalar mu = 1) const;
         scalarField getHat(const scalarField& Pi, const scalar mu, const label row) const;
         Pair<scalarField> getHatAndBonus(const scalarField& Pi, const scalar mu, const label row) const;
 
