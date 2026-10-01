@@ -1,22 +1,20 @@
 scalarField mu(d);
 scalarField sigma(d);
-scalar t = learningDict.getOrAdd("t", 0.0);
+scalar t = learningDict.getOrAdd<scalar>("t", 0.0);
 
 if (t == 0.0) {
 
     t += 1.0;
     learningDict.set<scalar>("t", t);
-    scalarField L(d, 0.0);
-    learningDict.set<scalarField>("L", L);
-    scalarField N(d, 0.0);
-    learningDict.set<scalarField>("N", N);
+    learningDict.emplace<scalarField>("L", d, 0.0);
+    learningDict.emplace<scalarField>("N", d, 0.0);
     mu = 0.0;
     sigma = 1.0;
 
 } else {
 
-    scalarField L = learningDict.get<scalarField>("L");
-    scalarField N = learningDict.get<scalarField>("N");
+    scalarField& L = learningDict.get<scalarField>("L");
+    scalarField& N = learningDict.get<scalarField>("N");
     scalar loss = learningDict.get<scalar>("loss");
     scalar variance = learningDict.getOrAdd<scalar>("variance", 1.0);
     if (loss > 0.0) {
@@ -30,8 +28,6 @@ if (t == 0.0) {
         i = learningDict.get<label>("i");
         L[i] += loss;
         N[i] += 1.0;
-        learningDict.set<scalarField>("L", L);
-        learningDict.set<scalarField>("N", N);
     }
     mu = L / (N + 1.0);
     sigma = sqrt(variance / (N + 1.0));

@@ -4,9 +4,9 @@ Class
 Group
     grpLduMatrixSolvers
 Description
-    Preconditioner conjugate gradient solver for symmetric lduMatrices
-    that uses Tsallis-INF (as described in Zimmert & Seldin (2021) to
-    select which preconditioner to use.
+    Preconditioned conjugate gradient solver for symmetric lduMatrices.
+    Selects preconditioner and initial-guess configurations using Tsallis-INF,
+    SpectralINF, or Thompson sampling.
 SourceFiles
     PCGBandit.C
 \*---------------------------------------------------------------------------*/
@@ -14,7 +14,6 @@ SourceFiles
 #define PCGBandit_H
 #include "lduMatrix.H"
 #include "autoPtr.H"
-#include "decomposedLaplacian.H"
 #include "mirrorDescent.H"
 #include "similarityMatrix.H"
 #include "subspaceInitializer.H"

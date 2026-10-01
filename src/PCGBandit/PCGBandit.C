@@ -5,17 +5,22 @@
 //
 #include "PCGBandit.H"
 #include "PrecisionAdaptor.H"
+#include "learnerState.H"
+#include "decomposedLaplacian.H"
 
 #include "clockValue.H"
 #include "fvMesh.H"
 #include "Pstream.H"
 #include "Random.H"
 
-#include "HashPtrTable.H"
-#include "OStringStream.H"
+#include "HashTable.H"
 
 //#define PCGB_DEBUG
 //#define DUMP_ABSOL
+
+#ifdef DUMP_ABSOL
+#include "OStringStream.H"
+#endif
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -34,14 +39,11 @@ namespace Foam
     dictionary preconditionerDict;
     dictionary subDict;
     HashTable<configurationSpace> configurationSpaces;
-    dictionary learningDicts;
+    HashTable<learnerState> learningDicts;
 
     #ifdef DUMP_ABSOL
     #include "Absol/initializeDumping.H"
     #endif
-
-    // --- For storage across instances by learning algorithms
-    HashPtrTable<decomposedLaplacian> nonSerializableObjects_;
 
 }
 
@@ -141,7 +143,7 @@ void Foam::PCGBandit::queryLearner
 ) const
 {
     label i = static_;
-    dictionary& learningDict = learningDicts.subDictOrAdd(banditName_);
+    learnerState& learningDict = learningDicts(banditName_);
     const List<dictionary>& preconditionerDicts = configurationSpaces[banditName_].dicts();
     const label comm = matrix_.mesh().comm();
 
@@ -433,7 +435,7 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
 
         // --- Pass cost to learning algorithm
         if (static_ == -1 && !randomUniform_ && Pstream::master(matrix_.mesh().comm())) {
-            dictionary& learningDict = learningDicts.subDict(banditName_);
+            learnerState& learningDict = learningDicts[banditName_];
             learningDict.set<scalar>("loss", costEstimate);
         }
     }

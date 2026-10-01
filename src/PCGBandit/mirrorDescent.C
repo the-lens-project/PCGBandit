@@ -54,6 +54,7 @@ scalar tsallisINF(
 
 }
 
+
 scalar tsallisINF(
     const scalarField& loss, 
     const scalar eta, 
@@ -62,8 +63,9 @@ scalar tsallisINF(
     const scalar alpha
 ) {
 
+    // --- using a different entropy formula than Zimmert & Seldin
     if (alpha == 0.5) {
-        return tsallisINF(loss, eta, probs, x);
+        return tsallisINF(loss, eta / alpha, probs, x);
     }
 
     scalar minLoss = min(loss);

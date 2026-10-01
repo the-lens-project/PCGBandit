@@ -9,7 +9,8 @@ Description
       - "dist": product of 1/(1 + distance) over axes. A missing axis incurs
         its largest observed distance.
       - "path": connect arms with identical axes that differ at one adjacent
-        value. All distinct categorical values are adjacent.
+        value. All distinct categorical values are adjacent. Ignore numProbes
+        differences when either arm has numProbes=0 (disabled initialization).
 
     Smoothers have a family axis (ICTC, SOR, ICTCSOR, symGS) and separate
     droptol/omega axes. DIC is droptol=1; GaussSeidel is omega=1.

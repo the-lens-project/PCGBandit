@@ -24,24 +24,27 @@ private:
     // Private Data
 
         const label d_;
-        label numZeroEVals_;
+        SquareMatrix<scalar> laplacian_;
+        scalarField degree_; // degree vector
 
-        //- Laplacian
-        SquareMatrix<scalar> Laplacian_;
+        labelList componentLabels_; // original row to connected component
+        label numComponents_; // number of connected components
+
+        labelList originalRows_; // stored row to original row
+        labelList componentOffsets_; // start of each component in originalRows_
+        labelList rowOffsets_; // stored row r has entries [rowOffsets_[r], rowOffsets_[r+1])
+
+        labelList columns_; // original column index for each nonzero
+        scalarField values_; // coefficient for each nonzero
 
         //- Eigenvalues of the Laplacian matrix
         DiagonalMatrix<scalar> Lambda_;
         DiagonalMatrix<scalar> sqrtLambda_;
 
-        //- Eigenrows of the Laplacian matrix
+        //- Rows of the eigenvector matrix (its columns are eigenvectors)
         List<scalarField> X_;
 
-        //- Maximise log determinant or effective dimension on the simplex
-        scalarField optimalDesign(const scalar mu, const bool trace) const;
-
 public:
-
-    // Public Data
 
     // Constructors
 
@@ -53,24 +56,49 @@ public:
 
     // Member Functions
 
+        //- Return a copy of the Laplacian eigenvalues.
         DiagonalMatrix<scalar> EVals() const {
             return Lambda_;
         }
 
+        //- Return a copy of the rows of the eigenvector matrix.
         List<scalarField> ERows() const {
             return X_;
         }
 
-        LLTMatrix<scalar> cholLambdaPlusVPi(const scalarField& Pi, const scalar mu) const;
-        LLTMatrix<scalar> cholLaplacianPlusPi(const scalarField& Pi, const scalar mu) const;
+        //- Apply L to distinct, pre-sized global vectors x and out.
+        //  component=-1 uses all rows; otherwise zero out outside that component.
+        void apply
+        (
+            const scalarField& x,
+            scalarField& out,
+            const label component = -1
+        ) const;
+
+        //- Factor mu*L + diag(probs + SMALL) by full Cholesky.
+        LLTMatrix<scalar> cholLapPlusProb(const scalarField& probs, const scalar mu) const;
+        //- Eigenvalue-based upper bound on dTr(mu).
         scalar dEff(scalar mu) const;
-        //- Maximise log det(mu*L + diag(Pi) + SMALL*I)
+
+        //- Return p maximizing Tr(diag(p)*A^-1) if trace, else log det(A).
+        //  A=mu*L+diag(p+SMALL); optional traceObjective receives the trace
+        //  at the returned p, even when maximizing log determinant.
+        scalarField optimalDesign
+        (
+            const scalar mu,
+            const bool trace,
+            scalar* traceObjective = nullptr
+        ) const;
+        //--- Maximise Tr(diag(p)*(mu*L + diag(p) + SMALL*I)^-1), return objective value
+        scalar dTr(const scalar mu) const;
+        //--- Maximise log det(mu*L + diag(p) + SMALL*I) over p, return argmax
         scalarField DOptimalDesign(const scalar mu) const;
 
-        //- Maximise Tr(diag(Pi)*(mu*L + diag(Pi) + SMALL*I)^-1)
-        scalarField traceOptimalDesign(const scalar mu = 1) const;
-        scalarField getHat(const scalarField& Pi, const scalar mu, const label row) const;
-        Pair<scalarField> getHatAndBonus(const scalarField& Pi, const scalar mu, const label row) const;
+        //- Solve (mu*L+diag(probs+SMALL))*hat=e_row by CG, with Cholesky fallback.
+        scalarField getHat(const scalarField& probs, const scalar mu, const label row) const;
+
+        //- Return (A^-1*e_row, diag(A^-1)) via Cholesky; A=mu*L+diag(probs+SMALL).
+        Pair<scalarField> getHatAndBonus(const scalarField& probs, const scalar mu, const label row) const;
 
 };
 

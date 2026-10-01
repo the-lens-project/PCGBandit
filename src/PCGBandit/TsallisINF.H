@@ -1,27 +1,24 @@
 scalarField probs(d);
-scalar t = learningDict.getOrAdd("t", 0.0);
+scalar t = learningDict.getOrAdd<scalar>("t", 0.0);
 
 if (t == 0.0) {
 
     t += 1.0;
     learningDict.set<scalar>("t", t);
     probs = 1.0 / scalar(d);
-    scalarField IW(d, 0.0);
-    learningDict.set<scalarField>("IW", IW);
+    learningDict.emplace<scalarField>("IW", d, 0.0);
     if (lossEstimator_ == "RV") {
-        scalarField shift(d, 0.0);
-        learningDict.set<scalarField>("shift", shift);
+        learningDict.emplace<scalarField>("shift", d, 0.0);
     }
 
 } else {
 
     // --- Process solver feedback
-    scalarField IW = learningDict.get<scalarField>("IW");
+    scalarField& IW = learningDict.get<scalarField>("IW");
     scalar scale = learningDict.getOrAdd<scalar>("scale", 1.0);
     scalar loss = learningDict.getOrAdd<scalar>("loss", 0.0);
     if (loss > 0.0) {
         IW[learningDict.get<label>("i")] += loss / learningDict.get<scalar>("p");
-        learningDict.set<scalarField>("IW", IW);
         scale = (scale * (t - 1.0) + loss) / t;
         learningDict.set<scalar>("scale", scale);
         t += 1.0;
@@ -60,7 +57,7 @@ learningDict.set<scalar>("p", probs[i]);
 
 // --- Computes shift for the reduced variance case
 if (lossEstimator_ == "RV" && t >= 16.0) {
-    scalarField shift = learningDict.get<scalarField>("shift");
+    scalarField& shift = learningDict.get<scalarField>("shift");
     for (label j = 0; j < d; j++) {
         scalar p = probs[j];
         if (t * p >= 16.0) {
@@ -70,5 +67,4 @@ if (lossEstimator_ == "RV" && t >= 16.0) {
             }
         }
     }
-    learningDict.set<scalarField>("shift", shift);
 }

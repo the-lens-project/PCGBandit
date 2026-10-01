@@ -3,7 +3,9 @@
 \*---------------------------------------------------------------------------*/
 
 #include "decomposedLaplacian.H"
+#include "conjugateGradient.H"
 #include "EigenMatrix.H"
+#include "DynamicList.H"
 #include "LLTMatrix.H"
 #include "SquareMatrix.H"
 
@@ -25,31 +27,39 @@ decomposedLaplacian::decomposedLaplacian(const SquareMatrix<scalar>& W)
     }
 
     // Form the symmetric Laplacian = D - W.
-    Laplacian_ = -W;
+    laplacian_ = -W;
     for (label i = 0; i < d_; ++i) {
         for (label j = 0; j < d_; ++j) {
-            Laplacian_[i][i] += W[i][j];
+            laplacian_[i][i] += W[i][j];
         }
     }
+    degree_ = laplacian_.diag();
 
     // Create a symmetric EigenMatrix object to decompose L
-    EigenMatrix<scalar> em(Laplacian_, true);
+    EigenMatrix<scalar> em(laplacian_, true);
 
-    // Each connected component contributes an exact zero eigenvalue.
-    // Count components instead of thresholding eigensolver round-off.
+    // Discover components and store their rows consecutively as we visit them.
+    // Each component contributes one exact zero eigenvalue.
     List<bool> visited(d_, false);
+    componentLabels_.setSize(d_);
+    originalRows_.setSize(d_);
+    componentOffsets_.setSize(d_ + 1);
     labelList pending(d_);
-    numZeroEVals_ = 0;
+    label row = 0;
+    numComponents_ = 0;
     for (label root = 0; root < d_; ++root)
     {
         if (visited[root]) continue;
-        ++numZeroEVals_;
+        const label component = numComponents_++;
+        componentOffsets_[component] = row;
         visited[root] = true;
         label size = 1;
         pending[0] = root;
         while (size)
         {
             const label i = pending[--size];
+            componentLabels_[i] = component;
+            originalRows_[row++] = i;
             for (label j = 0; j < d_; ++j)
             {
                 if (!visited[j] && W(i, j) > 0)
@@ -60,10 +70,35 @@ decomposedLaplacian::decomposedLaplacian(const SquareMatrix<scalar>& W)
             }
         }
     }
+    componentOffsets_[numComponents_] = row;
+    componentOffsets_.setSize(numComponents_ + 1);
+
+    // Append each row's nonzeros and record where that row starts.
+    DynamicList<label> columns;
+    DynamicList<scalar> values;
+    rowOffsets_.setSize(d_ + 1);
+    forAll(originalRows_, r)
+    {
+        const label i = originalRows_[r];
+        rowOffsets_[r] = values.size();
+        for (label j = 0; j < d_; ++j)
+        {
+            if (laplacian_(i, j) != 0)
+            {
+                columns.append(j);
+                values.append(laplacian_(i, j));
+            }
+        }
+    }
+    // The last offset closes the final row, including when that row is empty.
+    rowOffsets_[d_] = values.size();
+    columns_.transfer(columns);
+    values_.transfer(values);
+
     Lambda_ = em.EValsRe();
-    for (label i = 0; i < numZeroEVals_; ++i) Lambda_[i] = 0;
+    for (label i = 0; i < numComponents_; ++i) Lambda_[i] = 0;
     sqrtLambda_ = DiagonalMatrix<scalar>(d_, 0.0);
-    for (label i = numZeroEVals_; i < d_; ++i) {
+    for (label i = numComponents_; i < d_; ++i) {
         if (Lambda_[i] < Lambda_[i-1]) {
             Info<< "Warning: Eigenvalues not sorted. Check the EigenMatrix implementation." << endl;
         }
@@ -91,7 +126,7 @@ scalar Foam::decomposedLaplacian::dEff(
     label omega;
     scalar sumEVals = 0.0;
     scalar sumSqrtEVals = 0.0;
-    for (omega = numZeroEVals_; omega < d_; ++omega) {
+    for (omega = numComponents_; omega < d_; ++omega) {
         sumEVals += Lambda_[omega];
         sumSqrtEVals += sqrtLambda_[omega];
         if (sqrtLambda_[omega] * (1.0 + mu * sumEVals) < mu * Lambda_[omega] * sumSqrtEVals) {
@@ -101,44 +136,14 @@ scalar Foam::decomposedLaplacian::dEff(
         }
     }
 
-    scalar output = scalar(numZeroEVals_);
-    for (label i = numZeroEVals_; i < omega; ++i) {
-        scalar p = sqrtLambda_[i] * (1.0 + mu * sumEVals) / sumSqrtEVals - mu * Lambda_[i];
-        output += p / (mu * Lambda_[i] + p);
-    }
-    return output;
-
-}
-
-LLTMatrix<scalar> Foam::decomposedLaplacian::cholLambdaPlusVPi(
-    const scalarField& Pi,
-    const scalar mu
-) const
-{
-
-    SquareMatrix<scalar> RegVPi(d_, 0.0);
-    for (label i = 0; i < d_; ++i) {
-        RegVPi[i][i] = mu * Lambda_[i] + SMALL;
-    }
-
-    for (label k = 0; k < d_; ++k) {
-        const scalar Pik = Pi[k];
-        const scalarField& Xk = X_[k];
-        for (label i = 0; i < d_; ++i) {
-            const scalar PikXki = Pik * Xk[i];
-            for (label j = i; j < d_; ++j) {
-                RegVPi[i][j] += PikXki * Xk[j];
-            }
-        }
-    }
-
-    for (label i = 0; i < d_; ++i) {
-        for (label j = 0; j < i; ++j) {
-            RegVPi[i][j] = RegVPi[j][i];
-        }
-    }
-
-    return LLTMatrix<scalar>(RegVPi);
+    if (omega == numComponents_) return scalar(numComponents_);
+    const auto eigenvalues = Lambda_.slice(numComponents_, omega - numComponents_);
+    const auto sqrtEigenvalues = sqrtLambda_.slice(numComponents_, omega - numComponents_);
+    const scalarField p
+    (
+        sqrtEigenvalues*(1.0 + mu*sumEVals)/sumSqrtEVals - mu*eigenvalues
+    );
+    return scalar(numComponents_) + sum(p/(mu*eigenvalues + p));
 
 }
 
@@ -148,28 +153,31 @@ scalarField Foam::decomposedLaplacian::DOptimalDesign(const scalar mu) const
 }
 
 
-scalarField Foam::decomposedLaplacian::traceOptimalDesign(const scalar mu) const
+scalar Foam::decomposedLaplacian::dTr(const scalar mu) const
 {
-    return optimalDesign(mu, true);
+    scalar dimension;
+    optimalDesign(mu, true, &dimension);
+    return dimension;
 }
 
 
 scalarField Foam::decomposedLaplacian::optimalDesign
 (
     const scalar mu,
-    const bool trace
+    const bool trace,
+    scalar* traceObjective
 ) const
 {
-    if (!std::isfinite(mu) || mu < 0)
-    {
-        FatalErrorInFunction << "mu must be finite and non-negative"
-            << exit(FatalError);
-    }
 
-    const label maxIterations = 100000;
+    const label maxFWIter = 100000;
     const scalar tolerance = 1e-8;
-    scalarField Pi(d_, 1.0/scalar(d_));
-    if (mu == 0 || d_ == 1) return Pi;
+    scalarField probs(d_, 1.0/scalar(d_));
+    if (traceObjective) *traceObjective = 0;
+    if (mu == 0 || d_ == 1)
+    {
+        if (traceObjective) *traceObjective = scalar(d_)/(1 + scalar(d_)*SMALL);
+        return probs;
+    }
 
     SquareMatrix<scalar> inverse(d_, 0.0);
     SquareMatrix<scalar> metric(trace ? d_ : 0, 0.0);
@@ -178,18 +186,22 @@ scalarField Foam::decomposedLaplacian::optimalDesign
     scalar gap = GREAT;
     bool refresh = true;
 
-    for (label iteration = 0; iteration <= maxIterations; ++iteration)
+    for (label iteration = 0; iteration <= maxFWIter; ++iteration)
     {
-        const bool fresh = refresh || iteration == maxIterations
+        const bool fresh = refresh || iteration == maxFWIter
             || iteration % max(label(10), d_) == 0;
         if (fresh)
         {
-            const LLTMatrix<scalar> chol = cholLaplacianPlusPi(Pi, mu);
+            const LLTMatrix<scalar> chol = cholLapPlusProb(probs, mu);
+            // Every return below uses a fresh inverse. Reuse its diagonal
+            // to obtain the trace objective without any additional solves.
+            if (traceObjective) *traceObjective = 0;
             for (label j = 0; j < d_; ++j)
             {
                 unit[j] = 1;
                 chol.solve(column, unit);
                 for (label i = 0; i < d_; ++i) inverse(i, j) = column[i];
+                if (traceObjective) *traceObjective += probs[j]*column[j];
                 unit[j] = 0;
             }
 
@@ -205,7 +217,7 @@ scalarField Foam::decomposedLaplacian::optimalDesign
                         scalar value = SMALL*inverse(i, j);
                         for (label k = 0; k < d_; ++k)
                         {
-                            value -= mu*Laplacian_(i, k)
+                            value -= mu*laplacian_(i, k)
                                 *(inverse(i, j) - inverse(k, j));
                         }
                         regularised(i, j) = value;
@@ -228,26 +240,25 @@ scalarField Foam::decomposedLaplacian::optimalDesign
         }
 
         label receiver = 0, donor = -1;
-        scalar meanGradient = 0;
         for (label i = 0; i < d_; ++i)
         {
             gradient[i] = trace ? metric(i, i) : inverse(i, i);
-            meanGradient += Pi[i]*gradient[i];
             if (gradient[i] > gradient[receiver]) receiver = i;
-            if (Pi[i] > 0 && (donor < 0 || gradient[i] < gradient[donor]))
+            if (probs[i] > 0 && (donor < 0 || gradient[i] < gradient[donor]))
             {
                 donor = i;
             }
         }
+        const scalar meanGradient = sumProd(probs, gradient);
         // The simplex Frank-Wolfe gap bounds the remaining objective error.
         gap = gradient[receiver] - meanGradient;
         if (gap <= tolerance*max(scalar(1), mag(meanGradient)))
         {
-            if (fresh) return Pi;
+            if (fresh) return probs;
             refresh = true;
             continue;
         }
-        if (iteration == maxIterations) break;
+        if (iteration == maxFWIter) break;
 
         // Vertex exchange: move mass from the weakest supported arm.
         // D step: Harman et al., arXiv:1801.05661, Appendix A.1.
@@ -256,7 +267,7 @@ scalarField Foam::decomposedLaplacian::optimalDesign
         const scalar c = inverse(receiver, donor);
         const scalar slope = a - b;
         const scalar curvature = max(scalar(0), a*b - c*c);
-        scalar step = Pi[donor];
+        scalar step = probs[donor];
         if (trace)
         {
             const scalar first = gradient[receiver] - gradient[donor];
@@ -265,7 +276,7 @@ scalarField Foam::decomposedLaplacian::optimalDesign
             // Along this exchange the objective gain is
             // (first*t - second*t^2)/(1 + slope*t - curvature*t^2).
             scalar lo = 0, hiStep = step;
-            for (label k = 0; k < 60; ++k)
+            for (label k = 0; k < 50; ++k)
             {
                 const scalar t = 0.5*(lo + hiStep);
                 const scalar det = 1 + slope*t - curvature*t*t;
@@ -297,14 +308,14 @@ scalarField Foam::decomposedLaplacian::optimalDesign
         {
             hi[k] = inverse(k, receiver);
             hj[k] = inverse(k, donor);
-            u[k] = kii*hi[k] + kij*hj[k];
-            v[k] = kij*hi[k] + kjj*hj[k];
             if (trace)
             {
                 gi[k] = metric(k, receiver);
                 gj[k] = metric(k, donor);
             }
         }
+        u = kii*hi + kij*hj;
+        v = kij*hi + kjj*hj;
         const scalar gii = trace ? metric(receiver, receiver) : 0;
         const scalar gij = trace ? metric(receiver, donor) : 0;
         const scalar gjj = trace ? metric(donor, donor) : 0;
@@ -325,51 +336,114 @@ scalarField Foam::decomposedLaplacian::optimalDesign
                 }
             }
         }
-        Pi[receiver] += step;
-        Pi[donor] -= step;
+        probs[receiver] += step;
+        probs[donor] -= step;
     }
 
     WarningInFunction << (trace ? "Trace" : "D-optimal")
         << " design did not converge; simplex gap = " << gap << endl;
-    return Pi;
+    return probs;
 }
 
-LLTMatrix<scalar> Foam::decomposedLaplacian::cholLaplacianPlusPi(
-    const scalarField& Pi,
+void Foam::decomposedLaplacian::apply
+(
+    const scalarField& x,
+    scalarField& y,
+    const label component
+) const
+{
+    const label begin = component < 0 ? 0 : componentOffsets_[component];
+    const label end = component < 0 ? d_ : componentOffsets_[component + 1];
+    if (component >= 0) y = 0;
+    for (label r = begin; r < end; ++r)
+    {
+        scalar value = 0;
+        for (label k = rowOffsets_[r]; k < rowOffsets_[r + 1]; ++k)
+        {
+            value += values_[k]*x[columns_[k]];
+        }
+        y[originalRows_[r]] = value;
+    }
+}
+
+LLTMatrix<scalar> Foam::decomposedLaplacian::cholLapPlusProb(
+    const scalarField& probs,
     const scalar mu
 ) const
 {
-    SquareMatrix<scalar> RegPi = mu * Laplacian_;
+    SquareMatrix<scalar> LapPlusProb = mu * laplacian_;
     for (label i = 0; i < d_; ++i) {
-        RegPi[i][i] += Pi[i] + SMALL;
+        LapPlusProb[i][i] += probs[i] + SMALL;
     }
-    return LLTMatrix<scalar>(RegPi);
+    return LLTMatrix<scalar>(LapPlusProb);
 }
 
 scalarField Foam::decomposedLaplacian::getHat(
-    const scalarField& Pi,
+    const scalarField& probs,
     const scalar mu,
     const label row
 ) const
 {
+    scalarField hat(d_, 0.0);
+    if (mu == 0 || degree_[row] == 0)
+    {
+        hat[row] = 1.0 / (probs[row] + SMALL);
+        return hat;
+    }
 
-    LLTMatrix<scalar> chol = cholLaplacianPlusPi(Pi, mu);
-    scalarField hat(d_);
+    const label component = componentLabels_[row];
+    const scalarField p(probs + SMALL);
+    const scalarField invDiag(1.0 / (mu * degree_ + p));
+
+    // Linear system matrix (A = mu*L + diag(p)) on the active component.
+    auto A = [&](const scalarField& x, scalarField& out)
+    {
+        apply(x, out, component);
+        out *= mu;
+        out += p*x;
+    };
+
+    // Target vector (one-hot on the given global row).
     scalarField e(d_, 0.0);
     e[row] = 1.0;
+
+    // Degree preconditioner on the component of the provided row:
+    // M = D - mu*degree*degree^T/sum(degree), D = diag(mu*degree + p).
+    // Computed via the Sherman-Morrison rank-one update
+    scalarField quotient(d_, 0.0);
+    scalar denom = 0.0;
+    for (label r = componentOffsets_[component]; r < componentOffsets_[component+1]; ++r) {
+        label i = originalRows_[r];
+        quotient[i] = degree_[i] * invDiag[i];
+        denom += quotient[i] * p[i];
+    }
+    const scalar scale = denom > 0 ? mu / denom : 0;
+    auto precondition = [&](const scalarField& r, scalarField& out)
+    {
+        out = invDiag * r;
+        if (scale > 0)
+        {
+            out += (scale * sumProd(quotient, r)) * quotient;
+        }
+    };
+
+    // Unit RHS: the squared absolute and relative residuals coincide.
+    if (conjugateGradient(A, e, precondition, hat)) return hat;
+
+    // Direct fallback after the bounded iterative solve, on the full system.
+    LLTMatrix<scalar> chol = cholLapPlusProb(probs, mu);
     chol.solve(hat, e);
     return hat;
-    
 }
 
 Pair<scalarField> Foam::decomposedLaplacian::getHatAndBonus(
-    const scalarField& Pi,
+    const scalarField& probs,
     const scalar mu,
     const label row
 ) const
 {
 
-    LLTMatrix<scalar> chol = cholLaplacianPlusPi(Pi, mu);
+    LLTMatrix<scalar> chol = cholLapPlusProb(probs, mu);
     Pair<scalarField> output;
     scalarField hat(d_);
     scalarField bonus(d_);

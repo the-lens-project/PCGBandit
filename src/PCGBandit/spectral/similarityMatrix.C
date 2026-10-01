@@ -435,6 +435,15 @@ void similarityMatrix::buildPath()
                     sameAxes = false;
                     break;
                 }
+                // Disabled initialization has no meaningful probe count.
+                if
+                (
+                    iter.key() == "numProbes"
+                 && (iter.val() == 0 || armJ[iter.key()] == 0)
+                )
+                {
+                    continue;
+                }
                 if (!sameValue(iter.val(), armJ[iter.key()]))
                 {
                     differing = iter.key();
