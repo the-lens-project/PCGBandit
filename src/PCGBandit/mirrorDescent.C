@@ -48,7 +48,7 @@ scalar tsallisINF(
     }
 
     if (i == maxNewtonIter) {
-        Info<< "Newton solver did not converge: " << update << endl;
+        WarningInFunction << "Newton solver did not converge:"  << update << endl;
     }
     return x;
 
@@ -88,7 +88,7 @@ scalar tsallisINF(
     }
 
     if (i == maxNewtonIter) {
-        Info<< "Newton solver did not converge: " << update << endl;
+        WarningInFunction << "Newton solver did not converge:"  << update << endl;
     }
     return x;
 

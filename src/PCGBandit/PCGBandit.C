@@ -206,15 +206,13 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
         lduMatrix::preconditioner::getName(controlDict_) + typeName,
         fieldName_
     );
+    clockValue initializeTime;
     clockValue preconstructTime;
     clockValue iterationTime;
-    clockValue learningTime;
-    clockValue subspaceTime;
+    clockValue learnerTime;
     clockValue solverTime = clockValue::now();
 
-    label subspaceRank = -1;
     bool armDrawn = false;
-
     label maxIter = maxIter_;
     label backstopIter = maxIter_;
     dictionary backstopDict;
@@ -232,9 +230,9 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
     solveScalar wArA = solverPerf.great_;
     solveScalar wArAold = wArA;
 
-    subspaceTime += clockValue::now();
+    initializeTime += clockValue::now();
     subspace_->update(psi, cmpt);
-    subspaceTime -= clockValue::now();
+    initializeTime -= clockValue::now();
 
     // --- Calculate A.psi
     matrix_.Amul(wA, psi, interfaceBouCoeffs_, interfaces_, cmpt);
@@ -289,15 +287,15 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
                 iterationTime += clockValue::now();
             } else {
                 // --- Get preconditioner from learning algorithm
-                learningTime = learningTime.now();
+                learnerTime = learnerTime.now();
                 queryLearner(solverPerf.initialResidual());
                 armDrawn = true;
 
-                learningTime -= clockValue::now();
+                learnerTime -= clockValue::now();
 
                 // --- Runs subspace initialization of the linear solve
-                subspaceTime += clockValue::now();
-                subspaceRank = subspace_->initialize
+                initializeTime += clockValue::now();
+                subspace_->initialize
                 (
                     cmpt,
                     subDict.getOrDefault<label>("lenHistory", 0),
@@ -305,15 +303,12 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
                     subDict.getOrDefault<scalar>("decayRate", 0),
                     normFactor, psi, rA, solverPerf
                 );
-                subspaceTime -= clockValue::now();
+                initializeTime -= clockValue::now();
 
                 preconstructTime = preconstructTime.now();
 
                 // --- The correction may have converged the system on its own
-                converged =
-                    minIter_ <= 0
-                 && subspaceRank > 0
-                 && solverPerf.checkConvergence(tolerance_, relTol_, log_);
+                converged = minIter_ <= 0 && solverPerf.checkConvergence(tolerance_, relTol_, log_);
 
                 if (!converged) {
                     preconPtr = lduMatrix::preconditioner::New(*this, preconditionerDict);
@@ -422,7 +417,7 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
     }
 
     solverTime -= clockValue::now();
-    learningTime += clockValue::now();
+    learnerTime += clockValue::now();
     scalar costEstimate = 0.0;
     if (armDrawn) {
 
@@ -439,7 +434,7 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
             learningDict.set<scalar>("loss", costEstimate);
         }
     }
-    learningTime -= clockValue::now();
+    learnerTime -= clockValue::now();
     PCGTime -= solverTime;
 
     Info<< "INFO: banditName=" << banditName_;
@@ -449,10 +444,10 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
     Info<< ", initialResidual=" << solverPerf.initialResidual();
     Info<< ", finalResidual=" << solverPerf.finalResidual();
     Info<< ", nIterations=" << solverPerf.nIterations();
-    Info<< ", subspaceTime=" << -subspaceTime;
+    Info<< ", initializeTime=" << -initializeTime;
     Info<< ", preconstructTime=" << -preconstructTime;
     Info<< ", iterationTime=" << -iterationTime;
-    Info<< ", learningTime=" << -learningTime;
+    Info<< ", learnerTime=" << -learnerTime;
     Info<< ", solverTime=" << -solverTime;
     Info<< ", PCGTime=" << PCGTime;
     if (deterministic_ && armDrawn) {

@@ -557,7 +557,7 @@ Foam::label Foam::subspaceInitializer::update
 }
 
 
-Foam::label Foam::subspaceInitializer::initialize
+void Foam::subspaceInitializer::initialize
 (
     const direction cmpt,
     const label lenHistory,
@@ -609,16 +609,12 @@ Foam::label Foam::subspaceInitializer::initialize
 
     pushState(psi);
 
-    if (rank <= 0)
+    // Preserve initialResidual so the relative-convergence target is unchanged.
+    if (rank > 0)
     {
-        return -1;
+        solverPerf.finalResidual() = gSumMag(rA, matrix_.mesh().comm())/normFactor;
     }
 
-    // Preserve initialResidual so the relative-convergence target is unchanged.
-    solverPerf.finalResidual() =
-        gSumMag(rA, matrix_.mesh().comm())/normFactor;
-
-    return rank;
 }
 
 // ************************************************************************* //

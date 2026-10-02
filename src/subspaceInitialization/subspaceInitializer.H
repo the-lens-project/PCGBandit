@@ -115,8 +115,7 @@ public:
     label update(const solveScalarField& psi, const direction cmpt) const;
 
     //- Correct psi and rA in place and refresh finalResidual after update().
-    //  Returns the retained rank, or -1 if no correction was applied.
-    label initialize
+    void initialize
     (
         const direction cmpt,
         const label lenHistory,
@@ -129,7 +128,7 @@ public:
     ) const;
 
     //- Initialize using the configured capacities and dictionary decay rate
-    label initialize
+    void initialize
     (
         const direction cmpt,
         const solveScalar normFactor,
@@ -138,7 +137,7 @@ public:
         solverPerformance& solverPerf
     ) const
     {
-        return initialize
+        initialize
         (
             cmpt, maxLenHistory_, maxNumProbes_, decayRate_,
             normFactor, psi, rA, solverPerf
