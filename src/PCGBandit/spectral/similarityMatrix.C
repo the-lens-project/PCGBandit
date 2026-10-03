@@ -394,6 +394,20 @@ void similarityMatrix::buildKernel(const scalar threshold = 0.1)
 
                 if (!onI && !onJ) continue;
 
+                // Disabled initialization has no meaningful probe count.
+                if
+                (
+                    axisName == "numProbes"
+                 &&
+                    (
+                        (onI && armI[axisName] == 0)
+                     || (onJ && armJ[axisName] == 0)
+                    )
+                )
+                {
+                    continue;
+                }
+
                 const scalar d =
                     (onI && onJ)
                   ? axis.distance(armI[axisName], armJ[axisName])
@@ -426,31 +440,38 @@ void similarityMatrix::buildLattice()
             const HashTable<scalar>& armI = arms_[i];
             const HashTable<scalar>& armJ = arms_[j];
 
-            if (armI.size() != armJ.size()) continue;
-
             word differing;
             label numDiffering = 0;
             bool sameAxes = true;
 
-            forAllConstIters(armI, iter)
+            forAllConstIters(axes_, iter)
             {
-                if (!armJ.found(iter.key()))
+                // Constant axes cannot distinguish parameter settings.
+                if (iter.val().size() < 2) continue;
+
+                const word& axisName = iter.key();
+                const bool onI = armI.found(axisName);
+                const bool onJ = armJ.found(axisName);
+
+                if (onI != onJ)
                 {
                     sameAxes = false;
                     break;
                 }
+                if (!onI) continue;
+
                 // Disabled initialization has no meaningful probe count.
                 if
                 (
-                    iter.key() == "numProbes"
-                 && (iter.val() == 0 || armJ[iter.key()] == 0)
+                    axisName == "numProbes"
+                 && (armI[axisName] == 0 || armJ[axisName] == 0)
                 )
                 {
                     continue;
                 }
-                if (!sameValue(iter.val(), armJ[iter.key()]))
+                if (!sameValue(armI[axisName], armJ[axisName]))
                 {
-                    differing = iter.key();
+                    differing = axisName;
                     ++numDiffering;
                     if (numDiffering > 1) break;
                 }

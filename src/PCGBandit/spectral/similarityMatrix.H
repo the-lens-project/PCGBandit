@@ -8,9 +8,8 @@ Description
 
       - "kernel": product of 1/(1 + distance) over axes. A missing axis incurs
         its largest observed distance.
-      - "lattice": connect arms with identical axes that differ at one adjacent
-        value. All distinct categorical values are adjacent. Ignore numProbes
-        differences when either arm has numProbes=0 (disabled initialization).
+      - "lattice": connects arms with identical  axes that differ at one 
+        adjacent value. All distinct categorical values are adjacent.
 
     Smoothers have a family axis (ICTC, SOR, ICTCSOR, symGS) and separate
     droptol/omega axes. DIC is droptol=1; GaussSeidel is omega=1.

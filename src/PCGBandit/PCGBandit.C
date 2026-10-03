@@ -425,7 +425,7 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
         if (deterministic_) {
             costEstimate = 1e-9 * costs_.totalCostEstimate(subDict, solverPerf.nIterations(), maxIter_, backstop_);
         } else {
-            costEstimate = -solverTime;
+            costEstimate = learnerTime - solverTime;
         }
 
         // --- Pass cost to learning algorithm
