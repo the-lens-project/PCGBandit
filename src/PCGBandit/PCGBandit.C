@@ -98,12 +98,15 @@ Foam::PCGBandit::PCGBandit
     randomUniform_ = Switch(solverControls.getOrDefault<word>("randomUniform", "no"));
     banditAlgorithm_ = solverControls.getOrDefault<word>("banditAlgorithm", "TsallisINF");
 
+    // Seed the shared stream once; new bandits must not restart it.
+    static bool rndGenSeeded = false;
+    if (!rndGenSeeded && Pstream::master(matrix.mesh().comm())) {
+        rndGen.reset(mesh.time().controlDict().getOrDefault<label>("randomSeed", 0));
+        rndGenSeeded = true;
+    }
+
     if (!configurationSpaces.found(banditName_))
     {
-        if (Pstream::master(matrix.mesh().comm())) {
-            rndGen.reset(mesh.time().controlDict().getOrDefault<label>("randomSeed", 0));
-        }
-
         configurationSpaces.set
         (
             banditName_,
