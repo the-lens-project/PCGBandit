@@ -420,15 +420,15 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
     }
 
     solverTime -= clockValue::now();
+    scalar costEstimate = learnerTime;
     learnerTime += clockValue::now();
-    scalar costEstimate = 0.0;
     if (armDrawn) {
 
         // --- Compute solver cost
         if (deterministic_) {
             costEstimate = 1e-9 * costs_.totalCostEstimate(subDict, solverPerf.nIterations(), maxIter_, backstop_);
         } else {
-            costEstimate = learnerTime - solverTime;
+            costEstimate -= solverTime;
         }
 
         // --- Pass cost to learning algorithm
