@@ -1,7 +1,7 @@
 mirrorDescent.C
 costEstimation.C
 configurationSpace.C
-spectral/decomposedLaplacian.C
+spectral/graphLaplacian.C
 spectral/similarityMatrix.C
 PCGBandit.C
 

@@ -5,8 +5,8 @@
 //
 #include "PCGBandit.H"
 #include "PrecisionAdaptor.H"
-#include "learnerState.H"
-#include "decomposedLaplacian.H"
+#include "referenceDictionary.H"
+#include "graphLaplacian.H"
 
 #include "clockValue.H"
 #include "fvMesh.H"
@@ -39,7 +39,7 @@ namespace Foam
     dictionary preconditionerDict;
     dictionary subDict;
     HashTable<configurationSpace> configurationSpaces;
-    HashTable<learnerState> learningDicts;
+    HashTable<referenceDictionary> learningDicts;
 
     #ifdef DUMP_ABSOL
     #include "Absol/initializeDumping.H"
@@ -143,7 +143,7 @@ void Foam::PCGBandit::queryLearner
 ) const
 {
     label i = static_;
-    learnerState& learningDict = learningDicts(banditName_);
+    referenceDictionary& learningDict = learningDicts(banditName_);
     const List<dictionary>& preconditionerDicts = configurationSpaces[banditName_].dicts();
     const label comm = matrix_.mesh().comm();
 
@@ -430,7 +430,7 @@ Foam::solverPerformance Foam::PCGBandit::scalarSolve
 
         // --- Pass cost to learning algorithm
         if (static_ == -1 && !randomUniform_ && Pstream::master(matrix_.mesh().comm())) {
-            learnerState& learningDict = learningDicts[banditName_];
+            referenceDictionary& learningDict = learningDicts[banditName_];
             learningDict.set<scalar>("loss", costEstimate);
         }
     }

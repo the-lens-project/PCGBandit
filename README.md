@@ -63,6 +63,21 @@ These supplement the usual PCG controls:
 | `backstop` | `-1` | DIC fallback: `-1` chooses a threshold from estimated costs; `0` disables fallback; a positive value sets the additional iteration budget. |
 | `cacheAgglomeration` | `yes` | Cache multigrid agglomeration. Disabled when tuning multiple agglomeration settings, except with a fixed `static` candidate. |
 
+### SpectralINF
+
+Set `banditAlgorithm SpectralINF;` to share feedback through a graph built from the candidate parameters. These additional controls apply to SpectralINF:
+
+| Keyword | Default | Description |
+|---------|---------|-------------|
+| `similarity` | `lattice` | `lattice` or `kernel` |
+| `mu` | `0.001` | Graph regularization strength. |
+| `eta` | `0.1` | Fixed learning rate. |
+| `alpha` | `0.9` | Entropy parameter; `0` selects it automatically and `1` uses a softmax update. |
+| `gamma` | `0.0` | Mixing weight for a D-optimal exploration distribution; `0` disables mixing. |
+| `useBonus` | `no` | Enable optimism bonuses, using more expensive direct solves. |
+
+`lattice` connects configurations along adjacent parameter values, treating distinct categorical values as neighbors. `kernel` multiplies `1/(1 + distance)` across parameter axes and discards weights below `0.1`.
+
 ### ICTC drop tolerance
 
 | Keyword | Default | Description |
@@ -112,6 +127,7 @@ Without smoother tuning, multigrid candidates use `DICGaussSeidel`. Explicit `nC
 #### ICTC smoothers
 
 Include `ICTC` or `ICTCGaussSeidel` in an explicit `smootherTune` list to expand that family over drop tolerances. FGAMG caches their factors between smoothing calls.
+Load `libFGAMG` for these smoothers when using `deterministic yes` or the default automatic backstop (`backstop -1`); their cost estimates are unavailable with built-in GAMG.
 
 | Keyword | Default | Description |
 |---------|---------|-------------|
@@ -245,6 +261,6 @@ By default, each invocation runs three configurations through PCGBandit and save
 
 ## References
 
-1. Khodak, Jung, Wynne, Chow, Kolemen. [One-shot acceleration of transient PDE solvers via online-learned preconditioners](https://arxiv.org/abs/2509.08765). 2025 preprint.
+1. Khodak, Jung, Wynne, Chow, Kolemen. [One-shot acceleration of transient PDE solvers via online-learned preconditioners](https://arxiv.org/abs/2509.08765). Computer Physics Communications 327, 2026.
 2. Khodak, Chow, Balcan, Talwalkar. [Learning to relax: Setting solver parameters across a sequence of linear system instances](https://arxiv.org/abs/2310.02246). ICLR 2024.
 3. Wynne, Saenz, Al-Salami, Xu, Sun, Hu, Hanada, Kolemen. [FreeMHD: Validation and verification of the open-source, multi-domain, multi-phase solver for electrically conductive flows](https://arxiv.org/abs/2409.08950). Physics of Plasmas 32 (1), 2025.

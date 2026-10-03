@@ -1,7 +1,6 @@
 const scalar mu = controlDict_.getOrDefault<scalar>("mu", 0.001);
 const scalar eta = controlDict_.getOrDefault<scalar>("eta", 0.1);
-// Defaults to setting alpha automatically using Lap.dTr(mu)
-const scalar alpha = controlDict_.getOrDefault<scalar>("alpha", 0.0);
+const scalar alpha = controlDict_.getOrDefault<scalar>("alpha", 0.9);
 const scalar gamma = controlDict_.getOrDefault<scalar>("gamma", 0.0);
 const bool useBonus = Switch(controlDict_.getOrDefault<word>("useBonus", "no"));
 
@@ -9,7 +8,7 @@ scalar t = learningDict.getOrAdd<scalar>("t", 0.0);
 
 if (t == 0.0) {
 
-    const decomposedLaplacian& Lap = learningDict.emplace<decomposedLaplacian>
+    const graphLaplacian& Lap = learningDict.emplace<graphLaplacian>
     (
         "laplacian",
         similarityMatrix(configurationSpaces[banditName_].dicts(), controlDict_)
@@ -17,7 +16,7 @@ if (t == 0.0) {
     scalarField& probs = learningDict.emplace<scalarField>("probs", d);
     t += 1.0;
     learningDict.set<scalar>("t", t);
-    if (alpha == 0.0) {
+    if (alpha == 0.0) { // sets alpha automatically using Lap.dTr(mu) if alpha == 0.0
         learningDict.emplace<scalar>("alpha", 1.0 - 0.5 / max(1.0, log(scalar(d) / Lap.dTr(mu))));
     } else {
         learningDict.emplace<scalar>("alpha", alpha);
@@ -35,7 +34,7 @@ if (t == 0.0) {
 
 } else {
 
-    const decomposedLaplacian& Lap = learningDict.get<decomposedLaplacian>("laplacian");
+    const graphLaplacian& Lap = learningDict.get<graphLaplacian>("laplacian");
     scalarField& probs = learningDict.get<scalarField>("probs");
     scalar scale = learningDict.getOrAdd<scalar>("scale", 1.0);
     scalar loss = learningDict.getOrAdd<scalar>("loss", 0.0);

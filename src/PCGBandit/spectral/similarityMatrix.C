@@ -369,7 +369,7 @@ void similarityMatrix::discoverAxes(const List<dictionary>& armDicts)
 }
 
 
-void similarityMatrix::buildDist()
+void similarityMatrix::buildKernel(const scalar threshold = 0.1)
 {
     const label numArms = arms_.size();
 
@@ -400,6 +400,10 @@ void similarityMatrix::buildDist()
                   : axis.worstCase();
 
                 similarity /= (1.0 + d);
+                if (similarity < threshold) {
+                    similarity = 0.0;
+                    break;
+                }
             }
 
             (*this)(i, j) = similarity;
@@ -409,7 +413,7 @@ void similarityMatrix::buildDist()
 }
 
 
-void similarityMatrix::buildPath()
+void similarityMatrix::buildLattice()
 {
     const label numArms = arms_.size();
 
@@ -469,7 +473,8 @@ void similarityMatrix::buildPath()
 similarityMatrix::similarityMatrix
 (
     const List<dictionary>& armDicts,
-    const similarityMode mode
+    const similarityMode mode,
+    const scalar threshold
 )
 :
     SquareMatrix<scalar>(armDicts.size(), 0.0),
@@ -477,13 +482,13 @@ similarityMatrix::similarityMatrix
 {
     discoverAxes(armDicts);
 
-    if (mode_ == similarityMode::path)
+    if (mode_ == similarityMode::lattice)
     {
-        buildPath();
+        buildLattice();
     }
     else
     {
-        buildDist();
+        buildKernel(threshold);
     }
 }
 
@@ -491,10 +496,11 @@ similarityMatrix::similarityMatrix
 similarityMatrix::similarityMatrix
 (
     const List<dictionary>& armDicts,
-    const dictionary& solverControls
+    const dictionary& solverControls,
+    const scalar threshold
 )
 :
-    similarityMatrix(armDicts, readMode(solverControls))
+    similarityMatrix(armDicts, readMode(solverControls), threshold)
 {}
 
 
@@ -502,22 +508,22 @@ similarityMatrix::similarityMatrix
 
 similarityMode similarityMatrix::readMode(const dictionary& solverControls)
 {
-    const word mode = solverControls.getOrDefault<word>("similarity", "path");
+    const word mode = solverControls.getOrDefault<word>("similarity", "lattice");
 
-    if (mode == "path") return similarityMode::path;
-    if (mode == "dist") return similarityMode::dist;
+    if (mode == "lattice") return similarityMode::lattice;
+    if (mode == "kernel") return similarityMode::kernel;
 
     FatalErrorInFunction
         << "Unknown similarity option " << mode
-        << "; expected dist or path" << exit(FatalError);
+        << "; expected kernel or lattice" << exit(FatalError);
 
-    return similarityMode::path;
+    return similarityMode::lattice;
 }
 
 
 word similarityMatrix::modeName(const similarityMode mode)
 {
-    return (mode == similarityMode::path) ? "path" : "dist";
+    return (mode == similarityMode::lattice) ? "lattice" : "kernel";
 }
 
 

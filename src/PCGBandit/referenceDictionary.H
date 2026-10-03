@@ -1,18 +1,18 @@
 /*---------------------------------------------------------------------------*\
 Class
-    Foam::learnerState
+    Foam::referenceDictionary
 
 Description
-    In-memory, move-only learner state shared between solver instances.
+    In-memory, move-only reference dictionary shared between solver instances.
     Unlike dictionary, keys are literal and values retain their exact C++
     types; lookups return references without parsing or serialization.
     References survive insertion, in-place updates, and ownership transfer.
-    Replacing a state destroys its previous entries; assigning a field may
+    Replacing a dictionary destroys its previous entries; assigning a field may
     reallocate its element buffer. Reusing a key with another type is an error.
 \*---------------------------------------------------------------------------*/
 
-#ifndef learnerState_H
-#define learnerState_H
+#ifndef referenceDictionary_H
+#define referenceDictionary_H
 
 #include "HashPtrTable.H"
 #include "autoPtr.H"
@@ -27,7 +27,7 @@ Description
 namespace Foam
 {
 
-class learnerState
+class referenceDictionary
 {
     struct entry
     {
@@ -71,19 +71,19 @@ class learnerState
 public:
 
     //- Same as dictionary: default-construct an empty container.
-    learnerState() = default;
+    referenceDictionary() = default;
 
     //- Different from dictionary: copying is disabled; payloads need not copy.
-    learnerState(const learnerState&) = delete;
+    referenceDictionary(const referenceDictionary&) = delete;
 
     //- Different from dictionary: copy assignment is disabled.
-    learnerState& operator=(const learnerState&) = delete;
+    referenceDictionary& operator=(const referenceDictionary&) = delete;
 
     //- Same as dictionary: move-construct by transferring entry ownership.
-    learnerState(learnerState&&) = default;
+    referenceDictionary(referenceDictionary&&) = default;
 
     //- Different from dictionary: move assignment transfers entries, not copies.
-    learnerState& operator=(learnerState&&) = default;
+    referenceDictionary& operator=(referenceDictionary&&) = default;
 
     //- Different from dictionary::found: literal local keys only, no patterns.
     bool found(const word& keyword) const
@@ -99,14 +99,14 @@ public:
         if (!value)
         {
             FatalErrorInFunction
-                << "Missing learner state entry '" << keyword << "'"
+                << "Missing reference dictionary entry '" << keyword << "'"
                 << abort(FatalError);
         }
         const auto* stored = isA<storedValue<T>>(*value);
         if (!stored)
         {
             FatalErrorInFunction
-                << "Learner state entry '" << keyword
+                << "Reference dictionary entry '" << keyword
                 << "' does not hold the requested type " << typeid(T).name()
                 << abort(FatalError);
         }
@@ -117,7 +117,7 @@ public:
     template<class T>
     T& get(const word& keyword)
     {
-        return const_cast<T&>(static_cast<const learnerState&>(*this).get<T>(keyword));
+        return const_cast<T&>(static_cast<const referenceDictionary&>(*this).get<T>(keyword));
     }
 
     //- No dictionary counterpart: construct T and return T&; duplicate keys are fatal.
@@ -127,7 +127,7 @@ public:
         if (found(keyword))
         {
             FatalErrorInFunction
-                << "Learner state entry '" << keyword << "' already exists"
+                << "Reference dictionary entry '" << keyword << "' already exists"
                 << abort(FatalError);
         }
         entries_.insert

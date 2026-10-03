@@ -453,17 +453,19 @@ void Foam::FGAMGSolver::initVcycle
 
     coarseCorrFields.setSize(matrixLevels_.size());
     coarseSources.setSize(matrixLevels_.size());
-    smoothers.setSize(matrixLevels_.size() + 1);
+    // The final coarse matrix is solved separately, without smoothing.
+    smoothers.setSize(matrixLevels_.size());
+    const label coarsestSmoothingLevel = smoothers.size() - 1;
 
-    // Finds range of parameterized smoothers specified in the solver
-    List<word> smootherRange = findSmootherRange();
-
-    // Creates copy of the solver (original copy can't be modified directly)
+    const List<word> smootherRange = findSmootherRange();
     dictionary modifiedControlDict(controlDict_);
 
-    // Selects initial smoother for the finest level
-    if (smootherRange.size() > 0) {
-	selectSmootherPerLevel(0, matrixLevels_.size(), smootherRange, modifiedControlDict);
+    if (!smootherRange.empty())
+    {
+        selectSmootherPerLevel
+        (
+            0, coarsestSmoothingLevel, smootherRange, modifiedControlDict
+        );
     }
 
     // Create the smoother for the finest level
@@ -498,11 +500,23 @@ void Foam::FGAMGSolver::initVcycle
 
             maxSize = max(maxSize, nCoarseCells);
 
-            coarseCorrFields.set(leveli, new solveScalarField(nCoarseCells)); 
-		
-	    if (smootherRange.size() > 0) {
-		selectSmootherPerLevel(leveli+1, matrixLevels_.size(), smootherRange, modifiedControlDict);
-	    }
+            coarseCorrFields.set(leveli, new solveScalarField(nCoarseCells));
+
+            if (leveli + 1 == matrixLevels_.size())
+            {
+                continue;
+            }
+
+            if (!smootherRange.empty())
+            {
+                selectSmootherPerLevel
+                (
+                    leveli + 1,
+                    coarsestSmoothingLevel,
+                    smootherRange,
+                    modifiedControlDict
+                );
+            }
 
             smoothers.set
             (
@@ -606,12 +620,9 @@ void Foam::FGAMGSolver::selectSmootherPerLevel
     dictionary& controlDict
 ) const
 {
-	// Calculate which smoother to select from list
-	scalar levelRatio = scalar(level) / scalar(maxLevels);
-	label index = floor(levelRatio*scalar(availableSmoothers.size()-1));
-
-	// Select smoother
-	controlDict.set("smoother", availableSmoothers[index]);
+    const scalar levelRatio = maxLevels ? scalar(level)/scalar(maxLevels) : 0;
+    const label index = floor(levelRatio*scalar(availableSmoothers.size() - 1));
+    controlDict.set("smoother", availableSmoothers[index]);
 }
 
 

@@ -6,9 +6,9 @@ Description
     Discover parameter axes from the arm dictionaries. The solver's
     "similarity" entry selects:
 
-      - "dist": product of 1/(1 + distance) over axes. A missing axis incurs
+      - "kernel": product of 1/(1 + distance) over axes. A missing axis incurs
         its largest observed distance.
-      - "path": connect arms with identical axes that differ at one adjacent
+      - "lattice": connect arms with identical axes that differ at one adjacent
         value. All distinct categorical values are adjacent. Ignore numProbes
         differences when either arm has numProbes=0 (disabled initialization).
 
@@ -41,8 +41,8 @@ enum class axisMetric
 
 enum class similarityMode
 {
-    dist,   //!< product of 1/(1 + d) over the axes
-    path    //!< one iff the arms are a single step apart on one axis
+    kernel, //!< product of 1/(1 + d) over the axes
+    lattice //!< one iff the arms are a single step apart on one axis
 };
 
 
@@ -144,9 +144,9 @@ class similarityMatrix
 
         void discoverAxes(const List<dictionary>& armDicts);
 
-        void buildDist();
+        void buildKernel(const scalar threshold);
 
-        void buildPath();
+        void buildLattice();
 
 
 public:
@@ -156,13 +156,15 @@ public:
         similarityMatrix
         (
             const List<dictionary>& armDicts,
-            const dictionary& solverControls
+            const dictionary& solverControls,
+            const scalar threshold = 0.1
         );
 
         similarityMatrix
         (
             const List<dictionary>& armDicts,
-            const similarityMode mode
+            const similarityMode mode,
+            const scalar threshold = 0.1
         );
 
 
@@ -177,7 +179,7 @@ public:
 
     // Static Member Functions
 
-        //- Read "similarity", defaulting to "path"
+        //- Read "similarity", defaulting to "lattice"
         static similarityMode readMode(const dictionary& solverControls);
 
         static word modeName(const similarityMode mode);

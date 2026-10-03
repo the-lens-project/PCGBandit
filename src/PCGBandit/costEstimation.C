@@ -157,7 +157,9 @@ Foam::scalar Foam::costEstimation::perIterationCostEstimate
     scalar fillFactor = 1.0;
     if (smoother.contains("ICTC")) {
         scalar nnzAgg = scalar(nnzL);
-        for (label i = 0; i < L; i++) {
+        // Built-in GAMG still constructs an unused final coarse smoother.
+        const label nFactorLevels = preconditioner == "FGAMG" ? L - 1 : L;
+        for (label i = 0; i < nFactorLevels; i++) {
             nnzAgg += scalar(agg.nFaces(i));
         }
         fillFactor = scalar(debug::controlDict().get<label>("ICTC_SMOOTHER_NNZ")) / nnzAgg;
@@ -177,19 +179,23 @@ Foam::scalar Foam::costEstimation::perIterationCostEstimate
 
     // --- Per vcycle restriction + smoothing + residual computation + prolongation
     for (label i = 0; i < L; i++) {
+
+        // Transfers span all coarse levels; smoothing excludes the final matrix.
         const label nc  = agg.nCells(i);
+        perVcycle += scalar(4 * nc);
+        if (i == L - 1) {
+            continue;
+        }
         const label nf  = agg.nFaces(i);
         const label nPre  = (nPreSweeps  > 0)
             ? min(nPreSweeps  + preSweepsLevelMultiplier  * i, maxPreSweeps)  : 0;
         const label nPost = (nPostSweeps > 0)
             ? min(nPostSweeps + postSweepsLevelMultiplier * i, maxPostSweeps) : 0;
 
-        perVcycle += scalar(2 * nc);
         perVcycle += smootherApplyCost(smoother, nf, nc, nPre + nPost, fillFactor, ictcBaseline);
         if (nPre > 0) {
             perVcycle += scalar(2 * nf + nc);
         }
-        perVcycle += scalar(2 * nc);
         if (interpolateCorrection) {
             perVcycle += scalar(2 * nf + 3 * nc);
         }

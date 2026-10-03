@@ -63,7 +63,15 @@ scalar tsallisINF(
     const scalar alpha
 ) {
 
-    // --- using a different entropy formula than Zimmert & Seldin
+    if (alpha == 1.0) {
+        probs = softmax(-eta * loss);
+        return x;
+    }
+
+    // - The general alpha implementation uses the Tsallis entropy formula from Ito (2024),
+    //   which differs from the formula in Zimmert & Seldin (2021) by a 1 / alpha factor.
+    //   We thus divide the step-size by alpha when passing to the alpha = 0.5 method above,
+    //   which uses the Zimmert & Seldin (2021) formula.
     if (alpha == 0.5) {
         return tsallisINF(loss, eta / alpha, probs, x);
     }

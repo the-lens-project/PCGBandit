@@ -1,12 +1,14 @@
 /*---------------------------------------------------------------------------*\
-                    Class decomposedLaplacian Declaration
+                    Class graphLaplacian Declaration
 \*---------------------------------------------------------------------------*/
 
-#ifndef decomposedLaplacian_H
-#define decomposedLaplacian_H
-#include "DiagonalMatrix.H"
+#ifndef graphLaplacian_H
+#define graphLaplacian_H
 #include "SquareMatrix.H"
 #include "LLTMatrix.H"
+#include "Pair.H"
+#include "labelList.H"
+#include "scalarField.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -14,10 +16,10 @@ namespace Foam
 {
 
 /*---------------------------------------------------------------------------*\
-                        Class decomposedLaplacian Declaration
+                        Class graphLaplacian Declaration
 \*---------------------------------------------------------------------------*/
 
-class decomposedLaplacian
+class graphLaplacian
 {
 private:
 
@@ -37,34 +39,17 @@ private:
         labelList columns_; // original column index for each nonzero
         scalarField values_; // coefficient for each nonzero
 
-        //- Eigenvalues of the Laplacian matrix
-        DiagonalMatrix<scalar> Lambda_;
-        DiagonalMatrix<scalar> sqrtLambda_;
-
-        //- Rows of the eigenvector matrix (its columns are eigenvectors)
-        List<scalarField> X_;
-
 public:
 
     // Constructors
 
-        decomposedLaplacian(const SquareMatrix<scalar>& W);
+        graphLaplacian(const SquareMatrix<scalar>& W);
 
     // Destructor
 
-        ~decomposedLaplacian() = default;
+        ~graphLaplacian() = default;
 
     // Member Functions
-
-        //- Return a copy of the Laplacian eigenvalues.
-        DiagonalMatrix<scalar> EVals() const {
-            return Lambda_;
-        }
-
-        //- Return a copy of the rows of the eigenvector matrix.
-        List<scalarField> ERows() const {
-            return X_;
-        }
 
         //- Apply L to distinct, pre-sized global vectors x and out.
         //  component=-1 uses all rows; otherwise zero out outside that component.
@@ -75,11 +60,11 @@ public:
             const label component = -1
         ) const;
 
+        //- Eigenvalue-based upper bound on dTr(mu); computes eigendecomposition on each call.
+        scalar dEff(scalar mu) const;
+        
         //- Factor mu*L + diag(probs + SMALL) by full Cholesky.
         LLTMatrix<scalar> cholLapPlusProb(const scalarField& probs, const scalar mu) const;
-        //- Eigenvalue-based upper bound on dTr(mu).
-        scalar dEff(scalar mu) const;
-
         //- Return p maximizing Tr(diag(p)*A^-1) if trace, else log det(A).
         //  A=mu*L+diag(p+SMALL); optional traceObjective receives the trace
         //  at the returned p, even when maximizing log determinant.

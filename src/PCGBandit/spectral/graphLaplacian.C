@@ -1,9 +1,10 @@
 /*---------------------------------------------------------------------------*\
-                    Class decomposedLaplacian Implementation
+                    Class graphLaplacian Implementation
 \*---------------------------------------------------------------------------*/
 
-#include "decomposedLaplacian.H"
+#include "graphLaplacian.H"
 #include "conjugateGradient.H"
+#include "DiagonalMatrix.H"
 #include "EigenMatrix.H"
 #include "DynamicList.H"
 #include "LLTMatrix.H"
@@ -17,13 +18,13 @@ namespace Foam
 {
 
 // * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * * //
-decomposedLaplacian::decomposedLaplacian(const SquareMatrix<scalar>& W)
+graphLaplacian::graphLaplacian(const SquareMatrix<scalar>& W)
 :
     d_(W.n())
 {
     if (!d_)
     {
-        FatalErrorInFunction << "Cannot decompose an empty graph" << exit(FatalError);
+        FatalErrorInFunction << "Cannot construct a Laplacian for an empty graph" << exit(FatalError);
     }
 
     // Form the symmetric Laplacian = D - W.
@@ -34,9 +35,6 @@ decomposedLaplacian::decomposedLaplacian(const SquareMatrix<scalar>& W)
         }
     }
     degree_ = laplacian_.diag();
-
-    // Create a symmetric EigenMatrix object to decompose L
-    EigenMatrix<scalar> em(laplacian_, true);
 
     // Discover components and store their rows consecutively as we visit them.
     // Each component contributes one exact zero eigenvalue.
@@ -94,51 +92,42 @@ decomposedLaplacian::decomposedLaplacian(const SquareMatrix<scalar>& W)
     rowOffsets_[d_] = values.size();
     columns_.transfer(columns);
     values_.transfer(values);
-
-    Lambda_ = em.EValsRe();
-    for (label i = 0; i < numComponents_; ++i) Lambda_[i] = 0;
-    sqrtLambda_ = DiagonalMatrix<scalar>(d_, 0.0);
-    for (label i = numComponents_; i < d_; ++i) {
-        if (Lambda_[i] < Lambda_[i-1]) {
-            Info<< "Warning: Eigenvalues not sorted. Check the EigenMatrix implementation." << endl;
-        }
-        sqrtLambda_[i] = sqrt(Lambda_[i]);  
-    }
-
-    // Extract eigenvectors
-    const SquareMatrix<scalar>& Q = em.EVecs();
-    X_.setSize(d_);
-    for (label i = 0; i < d_; ++i) {
-        X_[i].setSize(d_);
-        for (label j = 0; j < d_; ++j) {
-            X_[i][j] = Q[i][j];
-        }
-    }
 }
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
-scalar Foam::decomposedLaplacian::dEff(
+scalar Foam::graphLaplacian::dEff(
     const scalar mu
 ) const
 {
+
+    EigenMatrix<scalar> em(laplacian_, true);
+    DiagonalMatrix<scalar> lambda = em.EValsRe();
+    for (label i = 0; i < numComponents_; ++i) lambda[i] = 0;
+    DiagonalMatrix<scalar> sqrtLambda(d_, 0.0);
+    for (label i = numComponents_; i < d_; ++i) {
+        if (lambda[i] < lambda[i-1]) {
+            WarningInFunction << "Eigenvalues not sorted. Check the EigenMatrix implementation." << endl;
+        }
+        sqrtLambda[i] = sqrt(lambda[i]);
+    }
 
     label omega;
     scalar sumEVals = 0.0;
     scalar sumSqrtEVals = 0.0;
     for (omega = numComponents_; omega < d_; ++omega) {
-        sumEVals += Lambda_[omega];
-        sumSqrtEVals += sqrtLambda_[omega];
-        if (sqrtLambda_[omega] * (1.0 + mu * sumEVals) < mu * Lambda_[omega] * sumSqrtEVals) {
-            sumEVals -= Lambda_[omega];
-            sumSqrtEVals -= sqrtLambda_[omega];
+        sumEVals += lambda[omega];
+        sumSqrtEVals += sqrtLambda[omega];
+        if (sqrtLambda[omega] * (1.0 + mu * sumEVals) < mu * lambda[omega] * sumSqrtEVals) {
+            sumEVals -= lambda[omega];
+            sumSqrtEVals -= sqrtLambda[omega];
             break;
         }
     }
 
     if (omega == numComponents_) return scalar(numComponents_);
-    const auto eigenvalues = Lambda_.slice(numComponents_, omega - numComponents_);
-    const auto sqrtEigenvalues = sqrtLambda_.slice(numComponents_, omega - numComponents_);
+    const auto eigenvalues = lambda.slice(numComponents_, omega - numComponents_);
+    const auto sqrtEigenvalues = sqrtLambda.slice(numComponents_, omega - numComponents_);
     const scalarField p
     (
         sqrtEigenvalues*(1.0 + mu*sumEVals)/sumSqrtEVals - mu*eigenvalues
@@ -147,13 +136,13 @@ scalar Foam::decomposedLaplacian::dEff(
 
 }
 
-scalarField Foam::decomposedLaplacian::DOptimalDesign(const scalar mu) const
+scalarField Foam::graphLaplacian::DOptimalDesign(const scalar mu) const
 {
     return optimalDesign(mu, false);
 }
 
 
-scalar Foam::decomposedLaplacian::dTr(const scalar mu) const
+scalar Foam::graphLaplacian::dTr(const scalar mu) const
 {
     scalar dimension;
     optimalDesign(mu, true, &dimension);
@@ -161,7 +150,7 @@ scalar Foam::decomposedLaplacian::dTr(const scalar mu) const
 }
 
 
-scalarField Foam::decomposedLaplacian::optimalDesign
+scalarField Foam::graphLaplacian::optimalDesign
 (
     const scalar mu,
     const bool trace,
@@ -345,7 +334,7 @@ scalarField Foam::decomposedLaplacian::optimalDesign
     return probs;
 }
 
-void Foam::decomposedLaplacian::apply
+void Foam::graphLaplacian::apply
 (
     const scalarField& x,
     scalarField& y,
@@ -366,7 +355,7 @@ void Foam::decomposedLaplacian::apply
     }
 }
 
-LLTMatrix<scalar> Foam::decomposedLaplacian::cholLapPlusProb(
+LLTMatrix<scalar> Foam::graphLaplacian::cholLapPlusProb(
     const scalarField& probs,
     const scalar mu
 ) const
@@ -378,7 +367,7 @@ LLTMatrix<scalar> Foam::decomposedLaplacian::cholLapPlusProb(
     return LLTMatrix<scalar>(LapPlusProb);
 }
 
-scalarField Foam::decomposedLaplacian::getHat(
+scalarField Foam::graphLaplacian::getHat(
     const scalarField& probs,
     const scalar mu,
     const label row
@@ -436,7 +425,7 @@ scalarField Foam::decomposedLaplacian::getHat(
     return hat;
 }
 
-Pair<scalarField> Foam::decomposedLaplacian::getHatAndBonus(
+Pair<scalarField> Foam::graphLaplacian::getHatAndBonus(
     const scalarField& probs,
     const scalar mu,
     const label row
